@@ -1,0 +1,6 @@
+pandas>=2.0
+numpy>=1.26
+backtesting>=0.6
+matplotlib>=3.8
+tabulate>=0.9
+yfinance>=0.2  # only needed for download_data.py --source yahoo
