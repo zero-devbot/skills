@@ -110,6 +110,30 @@ def main() -> int:
     lines += ["## Iteration ablation (mode=both)", "",
               pd.DataFrame(rows).to_markdown(index=False), ""]
 
+    # 0b -- iteration 3: FVG quality filter + liquidity-pool targets --------
+    it3 = [
+        ("v2 baseline (fixed 2R)", dict()),
+        ("v2 + FVG filter", dict(require_fvg=True)),
+        ("v2 + liquidity targets (min_rr=1.5, lb=100)",
+         dict(tp_mode="liquidity")),
+        ("v3: FVG + liquidity targets", dict(require_fvg=True,
+                                             tp_mode="liquidity")),
+        ("v3, min_rr=1.0", dict(require_fvg=True, tp_mode="liquidity",
+                                min_rr=1.0)),
+        ("v3, min_rr=2.0", dict(require_fvg=True, tp_mode="liquidity",
+                                min_rr=2.0)),
+        ("v3, pool lookback=48", dict(require_fvg=True, tp_mode="liquidity",
+                                      liq_lookback=48)),
+        ("v3, pool lookback=200", dict(require_fvg=True, tp_mode="liquidity",
+                                       liq_lookback=200)),
+    ]
+    rows = []
+    for name, params in it3:
+        _, stats = run(df, mode="both", **params)
+        rows.append(row(name, stats))
+    lines += ["## Iteration 3: FVG filter & liquidity targets (mode=both)", "",
+              pd.DataFrame(rows).to_markdown(index=False), ""]
+
     # 1 --- entry-mode variants, full window (v2 best-candidate params) -----
     rows = []
     for mode in ("ob", "sweep", "both"):
@@ -136,12 +160,20 @@ def main() -> int:
     # 2 --- in-sample / out-of-sample split --------------------------------
     split = df.index[0] + pd.DateOffset(months=18)
     rows = []
-    for name, part in (("in-sample (18mo)", df.loc[:split]),
-                       ("out-of-sample (6mo)", df.loc[split:])):
-        _, stats = run(part, mode="both")
-        rows.append(row(name, stats))
-    lines += ["## In-sample vs out-of-sample (mode=both, same params)", "",
+    for cfg_name, cfg in (("fixed 2R", {}),
+                          ("liquidity targets", {"tp_mode": "liquidity"})):
+        for name, part in (("in-sample (18mo)", df.loc[:split]),
+                           ("out-of-sample (6mo)", df.loc[split:])):
+            _, stats = run(part, mode="both", **cfg)
+            rows.append(row(f"{cfg_name}, {name}", stats))
+    lines += ["## In-sample vs out-of-sample (mode=both)", "",
               pd.DataFrame(rows).to_markdown(index=False), ""]
+
+    # equity chart + trade log for the liquidity-target variant
+    _, stats = run(df, mode="both", tp_mode="liquidity")
+    equity_png(stats, RESULTS / "equity_liq_targets.png",
+               "SMC XAUUSD H1 — liquidity targets (H4 bias, kill zones)")
+    stats["_trades"].to_csv(RESULTS / "trades_liq_targets.csv", index=False)
 
     # 3 --- robustness sweep ------------------------------------------------
     rows = []

@@ -5,12 +5,15 @@ evaluated with the **RBI framework — Research, Backtest, Implement**: research
 a strategy idea, encode it exactly and backtest it against realistic costs,
 and only implement (trade) it if the backtest earns that right.
 
-**Verdict: rejected at the Backtest gate.** Every tested configuration lost
-money over the 2-year window (June 2023 – June 2025) in which simply holding
-gold returned +71%. The best variant lost −8.7% (profit factor 0.84). The
-strategy as specified has no edge on XAUUSD H1 and must not be traded live.
-That is the RBI framework doing its job: the backtest killed the idea before
-real money did.
+**Verdict: rejected at the Backtest gate.** Across three iterations, no
+configuration shows a real edge over the 2-year window (June 2023 – June
+2025) in which simply holding gold returned +71%. Fixed-R exits lose −19% to
+−71%; the best refinement (liquidity-pool targets, iteration 3) reaches
++12% over the full window but the gain is entirely in-sample (+15.8% IS,
+−3.0% OOS, profit factor ≈ 1, −32% max drawdown, and it flips negative if
+the pool lookback changes). The strategy as specified must not be traded
+live. That is the RBI framework doing its job: the backtest killed the idea
+before real money did.
 
 ---
 
@@ -36,6 +39,8 @@ asymmetric R:R entries.
 | Liquidity sweep | Bar wicks through the last confirmed swing low/high but closes back inside; entry at market |
 | Premium/discount | OB longs only below the 50% level of the current dealing range (shorts mirrored) |
 | Kill zones | New entries only during London/NY opens (server hours 9–12 and 15–18, EET) |
+| Fair value gap (FVG) | 3-candle gap (`low[m+1] > high[m-1]`) inside the BOS impulse; optional OB quality filter |
+| Liquidity target | Optional TP just in front of the opposing pool (highest high / lowest low of last 100 bars), skipping trades paying < 1.5R |
 
 Risk model: 1% of equity per trade, stop beyond the invalidation level plus a
 0.25×ATR buffer, fixed take-profit in R multiples (default 2R), pending
@@ -68,6 +73,9 @@ orders expire after 48 bars, positions close if the HTF bias flips (CHoCH).
 | v1 + breakeven @1R | 281 | −36.8% | 24.9% | 0.84 | −36.8% |
 | **v2: v1 + kill zones** | 233 | **−19.4%** | 37.3% | 0.86 | −24.9% |
 | v2, OB entries only | 163 | −8.7% | 39.9% | 0.84 | −17.6% |
+| v2 + FVG filter (iter. 3) | 217 | −23.2% | 36.9% | 0.83 | −32.3% |
+| v2 + liquidity targets (iter. 3) | 199 | +12.3% | 28.1% | 0.98 | −31.8% |
+| v3: FVG + liquidity targets | 187 | −15.3% | 26.7% | 0.86 | −46.5% |
 | Buy & hold | — | **+71.6%** | — | — | — |
 
 Full tables — entry-mode variants, in-sample (18 mo) vs out-of-sample (6 mo)
@@ -94,11 +102,29 @@ split, and a robustness sweep over R:R × discount filter — are in
 - The out-of-sample slice (58 trades, PF 1.13) is the only positive cell and
   is far too small to outweigh everything else.
 
+Iteration 3 (requested follow-up) tested the two directions flagged above:
+
+- **FVG quality filter: rejected.** Requiring a fair value gap inside the
+  OB's impulse leg made every combination worse (v2 −19.4% → −23.2%; with
+  liquidity targets +12.3% → −15.3%). On H1 gold, most structure breaks
+  print an FVG anyway, so the filter mainly discards decent zones from
+  steadier legs while keeping the same losers.
+- **Liquidity-pool targets: the most promising change so far, but not an
+  edge.** Targeting the opposing pool instead of a fixed 2R (median planned
+  payoff ≈ 4R in this trending market) is the only configuration that goes
+  positive over the full window (+12.3%). It does not survive scrutiny:
+  the profit is entirely in-sample (+15.8% IS vs −3.0% OOS on 52 trades),
+  profit factor stays ≈ 1, max drawdown deepens to −32% (28% win rate means
+  long losing streaks), and shrinking the pool lookback from 100 to 48 bars
+  flips it to −25.4%. Two positive cells surrounded by deep negatives is
+  the signature of noise, not signal.
+
 ### Verdict
 
 Naive-but-faithful SMC (structure bias + OB retest + liquidity sweeps +
-discount filter + kill zones) on XAUUSD H1 is **not tradeable**: profit
-factor < 1 everywhere, underwater vs both zero and buy-and-hold. Reject.
+discount filter + kill zones) on XAUUSD H1 is **not tradeable**, with fixed-R
+or liquidity-based exits alike: no configuration shows an edge that survives
+out-of-sample validation and parameter perturbation. Reject.
 
 ## 3. Implement
 
@@ -107,11 +133,13 @@ pre-registered promotion criteria were: profit factor > 1.3 and positive
 expectancy on both IS and OOS, max drawdown < 20%, ≥ 100 OOS trades, then a
 3-month demo-account forward test before any real size.
 
-If you want to keep researching, the highest-value directions suggested by
-the failure mode (low win rate at fixed 2R): displacement/FVG quality filters
-on the impulse leg, targeting opposing liquidity instead of fixed R,
-higher-timeframe entry zones (H4 OBs, H1 execution), volatility-regime
-filters, and walk-forward optimization instead of a single split.
+If you want to keep researching: FVG filters and liquidity targets have now
+been tested (iteration 3 — the former rejected, the latter promising but
+unconfirmed). The remaining untested directions are higher-timeframe entry
+zones (H4 OBs with H1 execution), volatility-regime filters, walk-forward
+optimization instead of a single split, and — most importantly for the
+liquidity-target variant — more data: regime diversity beyond one strong
+bull market is what this 2-year window fundamentally lacks.
 
 ## Repository layout / how to run
 

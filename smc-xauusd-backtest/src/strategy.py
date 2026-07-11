@@ -29,7 +29,12 @@ class SmcStrategy(Strategy):
     # --- tunables (picked up by Backtest.optimize as well) ---
     mode = "both"            # "ob", "sweep" or "both"
     bias_tf = "h4"           # HTF used for structure bias: "d1" or "h4"
-    rr = 2.0                 # take-profit in R multiples
+    rr = 2.0                 # take-profit in R multiples (tp_mode="rr")
+    tp_mode = "rr"           # "rr" = fixed R multiple; "liquidity" = opposing pool
+    min_rr = 1.5             # tp_mode="liquidity": skip trades paying less than this
+    liq_lookback = 100       # bars scanned for the opposing liquidity pool
+    tp_liq_buf_atr = 0.1     # exit this many ATRs in front of the pool
+    require_fvg = False      # only trade OBs whose impulse left a fair value gap
     be_at_r = 0.0            # move stop to breakeven at this R multiple (0 = off)
     risk_pct = 0.01          # fraction of equity risked per trade
     sl_buf_atr = 0.25        # extra ATR under/over the invalidation level
@@ -69,6 +74,37 @@ class SmcStrategy(Strategy):
     def _entry_orders(self):
         return [o for o in self.orders if not o.is_contingent]
 
+    def _has_fvg(self, j: int, i: int, bullish: bool) -> bool:
+        """True if the impulse leg j..i contains a 3-candle fair value gap."""
+        hi, lo = self.data.High, self.data.Low
+        for m in range(max(j, 1), i):
+            if bullish and lo[m + 1] > hi[m - 1]:
+                return True
+            if not bullish and hi[m + 1] < lo[m - 1]:
+                return True
+        return False
+
+    def _target(self, entry: float, stop: float, atr_: float,
+                is_long: bool) -> float | None:
+        """Take-profit price, or None if the trade doesn't pay enough.
+
+        tp_mode="rr": fixed R multiple.  tp_mode="liquidity": exit just in
+        front of the opposing liquidity pool (highest high / lowest low of
+        the last `liq_lookback` bars), and skip the trade entirely when that
+        pool is closer than `min_rr` times the risk.
+        """
+        risk = abs(entry - stop)
+        if self.tp_mode == "rr":
+            return entry + self.rr * risk if is_long else entry - self.rr * risk
+        lb = min(self.liq_lookback, len(self.data))
+        if is_long:
+            pool = self.data.High[-lb:].max()
+            tp = pool - self.tp_liq_buf_atr * atr_
+            return tp if tp - entry >= self.min_rr * risk else None
+        pool = self.data.Low[-lb:].min()
+        tp = pool + self.tp_liq_buf_atr * atr_
+        return tp if entry - tp >= self.min_rr * risk else None
+
     def _last_opposite_candle(self, i: int, bearish: bool) -> int | None:
         """Bar index of the most recent bearish (or bullish) candle before i."""
         o, c = self.data.Open, self.data.Close
@@ -98,13 +134,15 @@ class SmcStrategy(Strategy):
             j = self._last_opposite_candle(i, bearish=True)
             if j is not None:
                 self._bull_obs.append(
-                    {"top": self.data.High[j], "bot": self.data.Low[j], "born": i})
+                    {"top": self.data.High[j], "bot": self.data.Low[j],
+                     "born": i, "fvg": self._has_fvg(j, i, bullish=True)})
         if not np.isnan(sl_) and slid not in self._broken_low and close < sl_:
             self._broken_low.add(slid)
             j = self._last_opposite_candle(i, bearish=False)
             if j is not None:
                 self._bear_obs.append(
-                    {"top": self.data.High[j], "bot": self.data.Low[j], "born": i})
+                    {"top": self.data.High[j], "bot": self.data.Low[j],
+                     "born": i, "fvg": self._has_fvg(j, i, bullish=False)})
 
         # expire / invalidate zones
         self._bull_obs = [z for z in self._bull_obs
@@ -156,9 +194,9 @@ class SmcStrategy(Strategy):
                 self._swept.add(("L", slid))
                 stop = low - self.sl_buf_atr * atr_
                 units = self._units(close, stop)
-                if units > 0:
-                    self.buy(size=units, sl=stop,
-                             tp=close + self.rr * (close - stop), tag="sweep")
+                tp = self._target(close, stop, atr_, is_long=True)
+                if units > 0 and tp is not None:
+                    self.buy(size=units, sl=stop, tp=tp, tag="sweep")
                     self._pending_born = i
                     return
             if bias < 0 and not np.isnan(sh) and ("H", shid) not in self._swept \
@@ -166,9 +204,9 @@ class SmcStrategy(Strategy):
                 self._swept.add(("H", shid))
                 stop = high + self.sl_buf_atr * atr_
                 units = self._units(close, stop)
-                if units > 0:
-                    self.sell(size=units, sl=stop,
-                              tp=close - self.rr * (stop - close), tag="sweep")
+                tp = self._target(close, stop, atr_, is_long=False)
+                if units > 0 and tp is not None:
+                    self.sell(size=units, sl=stop, tp=tp, tag="sweep")
                     self._pending_born = i
                     return
 
@@ -176,25 +214,33 @@ class SmcStrategy(Strategy):
         if self.mode in ("ob", "both"):
             if bias > 0 and self._bull_obs:
                 z = self._bull_obs[-1]
+                if self.require_fvg and not z["fvg"]:
+                    self._bull_obs.pop()   # low-quality impulse, discard
+                    return
                 entry = z["top"]
                 in_discount = np.isnan(mid) or entry <= mid
                 if close > entry and (not self.use_pd_filter or in_discount):
                     stop = z["bot"] - self.sl_buf_atr * atr_
                     units = self._units(entry, stop)
-                    if units > 0:
-                        self.buy(size=units, limit=entry, sl=stop,
-                                 tp=entry + self.rr * (entry - stop), tag="ob")
+                    tp = self._target(entry, stop, atr_, is_long=True)
+                    if units > 0 and tp is not None:
+                        self.buy(size=units, limit=entry, sl=stop, tp=tp,
+                                 tag="ob")
                         self._pending_born = i
                         self._bull_obs.pop()
             elif bias < 0 and self._bear_obs:
                 z = self._bear_obs[-1]
+                if self.require_fvg and not z["fvg"]:
+                    self._bear_obs.pop()   # low-quality impulse, discard
+                    return
                 entry = z["bot"]
                 in_premium = np.isnan(mid) or entry >= mid
                 if close < entry and (not self.use_pd_filter or in_premium):
                     stop = z["top"] + self.sl_buf_atr * atr_
                     units = self._units(entry, stop)
-                    if units > 0:
-                        self.sell(size=units, limit=entry, sl=stop,
-                                  tp=entry - self.rr * (stop - entry), tag="ob")
+                    tp = self._target(entry, stop, atr_, is_long=False)
+                    if units > 0 and tp is not None:
+                        self.sell(size=units, limit=entry, sl=stop, tp=tp,
+                                  tag="ob")
                         self._pending_born = i
                         self._bear_obs.pop()
