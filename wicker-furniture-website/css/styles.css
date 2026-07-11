@@ -1,0 +1,149 @@
+/* Veranda Wicker Co. — single stylesheet, no frameworks, ~6 KB gzipped.
+   Kept intentionally small so every page passes Core Web Vitals easily. */
+
+:root {
+  --ink: #2b2620;
+  --ink-soft: #5c5347;
+  --cream: #faf6ef;
+  --sand: #f1e9db;
+  --rattan: #b07d4f;
+  --rattan-dark: #8a5f38;
+  --leaf: #4a6741;
+  --line: #e3d9c8;
+  --max: 72rem;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: var(--ink);
+  background: var(--cream);
+  line-height: 1.65;
+  font-size: 1.0625rem;
+}
+
+h1, h2, h3, .brand, nav, .btn, .eyebrow, .card h3, .crumbs, .badge {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+h1 { font-size: clamp(1.9rem, 4.5vw, 3rem); line-height: 1.15; margin: 0 0 0.75rem; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.4rem, 3vw, 2rem); line-height: 1.25; margin: 2.5rem 0 0.75rem; letter-spacing: -0.01em; }
+h3 { font-size: 1.15rem; margin: 1.5rem 0 0.5rem; }
+p  { margin: 0 0 1rem; }
+a  { color: var(--rattan-dark); }
+img, svg { max-width: 100%; height: auto; }
+
+.wrap { max-width: var(--max); margin: 0 auto; padding: 0 1.25rem; }
+.prose { max-width: 46rem; }
+
+/* Header */
+.site-header {
+  background: var(--cream);
+  border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 10;
+}
+.site-header .wrap {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; padding-top: 0.9rem; padding-bottom: 0.9rem; flex-wrap: wrap;
+}
+.brand { font-weight: 700; font-size: 1.2rem; color: var(--ink); text-decoration: none; letter-spacing: 0.01em; }
+.brand span { color: var(--rattan); }
+.site-nav { display: flex; gap: 1.4rem; flex-wrap: wrap; }
+.site-nav a { color: var(--ink-soft); text-decoration: none; font-size: 0.95rem; }
+.site-nav a:hover, .site-nav a[aria-current="page"] { color: var(--rattan-dark); text-decoration: underline; text-underline-offset: 4px; }
+
+/* Hero */
+.hero {
+  background: linear-gradient(160deg, var(--sand) 0%, #e8dcc6 55%, #dccdb0 100%);
+  padding: 4rem 0 3.5rem;
+}
+.hero .wrap { display: grid; grid-template-columns: 1.2fr 1fr; gap: 3rem; align-items: center; }
+.hero p.lede { font-size: 1.2rem; color: var(--ink-soft); max-width: 34rem; }
+.eyebrow {
+  text-transform: uppercase; letter-spacing: 0.14em; font-size: 0.75rem;
+  color: var(--leaf); font-weight: 700; margin-bottom: 0.75rem; display: block;
+}
+
+.btn {
+  display: inline-block; background: var(--rattan-dark); color: #fff;
+  padding: 0.8rem 1.6rem; border-radius: 4px; text-decoration: none;
+  font-weight: 600; font-size: 0.95rem;
+}
+.btn:hover { background: var(--rattan); }
+.btn.ghost { background: transparent; color: var(--rattan-dark); border: 1.5px solid var(--rattan-dark); margin-left: 0.75rem; }
+
+/* Cards / grids */
+.grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); margin: 1.5rem 0; }
+.card {
+  background: #fff; border: 1px solid var(--line); border-radius: 8px;
+  overflow: hidden; display: flex; flex-direction: column;
+}
+.card .thumb { height: 10rem; display: block; }
+.card .body { padding: 1.1rem 1.25rem 1.4rem; }
+.card h3 { margin: 0 0 0.4rem; }
+.card h3 a { text-decoration: none; color: var(--ink); }
+.card p { font-size: 0.95rem; color: var(--ink-soft); margin-bottom: 0.6rem; }
+.price { font-weight: 700; color: var(--ink); font-family: inherit; }
+
+.badge {
+  display: inline-block; background: var(--sand); color: var(--leaf);
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; padding: 0.25rem 0.6rem; border-radius: 999px; margin-bottom: 0.6rem;
+}
+
+/* Sections */
+section { padding: 2.5rem 0; }
+section.alt { background: var(--sand); }
+
+/* Breadcrumbs */
+.crumbs { font-size: 0.85rem; color: var(--ink-soft); padding: 1.25rem 0 0; }
+.crumbs ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.crumbs li + li::before { content: "›"; margin-right: 0.4rem; color: var(--line); }
+.crumbs a { color: var(--ink-soft); }
+
+/* Tables */
+table { border-collapse: collapse; width: 100%; margin: 1.25rem 0; font-size: 0.95rem; }
+caption { text-align: left; font-style: italic; color: var(--ink-soft); margin-bottom: 0.5rem; }
+th, td { border: 1px solid var(--line); padding: 0.6rem 0.8rem; text-align: left; vertical-align: top; }
+th { background: var(--sand); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.85rem; }
+.table-scroll { overflow-x: auto; }
+
+/* FAQ */
+details {
+  background: #fff; border: 1px solid var(--line); border-radius: 6px;
+  padding: 0.9rem 1.2rem; margin-bottom: 0.75rem;
+}
+details summary { cursor: pointer; font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 1rem; }
+details[open] summary { margin-bottom: 0.5rem; }
+
+/* Callouts */
+.note {
+  background: #fff; border-left: 4px solid var(--leaf);
+  padding: 1rem 1.25rem; margin: 1.5rem 0; border-radius: 0 6px 6px 0;
+}
+
+/* Footer */
+.site-footer { background: var(--ink); color: #d8d0c4; margin-top: 3rem; padding: 2.5rem 0 2rem; font-size: 0.92rem; }
+.site-footer a { color: #e9e2d5; }
+.site-footer .cols { display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+.site-footer h3 { color: #fff; font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.site-footer ul { list-style: none; padding: 0; margin: 0; }
+.site-footer li { margin-bottom: 0.45rem; }
+.fineprint { margin-top: 2rem; border-top: 1px solid #453e35; padding-top: 1.25rem; color: #a89e8f; font-size: 0.82rem; }
+
+/* Forms */
+form.contact { display: grid; gap: 1rem; max-width: 34rem; }
+label { font-weight: 700; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 0.9rem; }
+input, textarea, select {
+  width: 100%; padding: 0.7rem 0.85rem; border: 1px solid var(--line);
+  border-radius: 5px; font: inherit; background: #fff;
+}
+
+@media (max-width: 44rem) {
+  .hero .wrap { grid-template-columns: 1fr; }
+  .btn.ghost { margin-left: 0; margin-top: 0.6rem; }
+}

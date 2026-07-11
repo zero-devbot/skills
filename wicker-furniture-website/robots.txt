@@ -1,0 +1,6 @@
+# Allow all crawlers, including AI/answer-engine crawlers
+# (GPTBot, ClaudeBot, PerplexityBot, Google-Extended, etc.)
+User-agent: *
+Allow: /
+
+Sitemap: https://www.verandawicker.com/sitemap.xml
