@@ -12,6 +12,7 @@
     "./skills/engineering/zoom-out",
     "./skills/productivity/caveman",
     "./skills/productivity/grill-me",
-    "./skills/productivity/write-a-skill"
+    "./skills/productivity/write-a-skill",
+    "./skills/misc/sports-bet-analyzer"
   ]
 }
