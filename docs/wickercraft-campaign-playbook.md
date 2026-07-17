@@ -164,10 +164,8 @@ Companion to [wickercraft-marketing-strategy.md](wickercraft-marketing-strategy.
 5. **Reply to comments with video** — pick a question ("how long does one take?", "do you ship to UK?") and answer on camera. These regularly outperform original posts.
 6. Post times: test 7–9am and 6–9pm your audience's timezone; check Analytics → Follower activity after 2 weeks.
 
-### TikTok Shop (if available in your country)
-1. Apply at seller.tiktok.com → link your account → upload products (or sync from Shopify).
-2. Tag a product in every relevant video (yellow basket icon appears).
-3. Once comfortable, try a live: "pack orders with me" or "watch me weave" — lives get pushed hard by the algorithm.
+### TikTok Shop (not yet available in South Africa as of mid-2026)
+TikTok ads work fine in SA, but native TikTok Shop hasn't launched there yet. Until it does: put your store link in bio, mention it verbally in videos, and go live anyway ("pack orders with me", "watch me weave") — lives get pushed hard by the algorithm and you can point viewers to the link in bio. When TikTok Shop launches in SA, apply at seller.tiktok.com immediately; brands with an existing audience will win the land grab.
 
 ### Paid: Spark Ads only
 1. Wait until an organic video clearly wins (top ~10% of your views).
@@ -249,7 +247,43 @@ Weekly newsletter: pick ONE thing per email (new product, restock, or one stylin
 
 ---
 
-## 9. The Weekly Operating Rhythm (put this in your calendar)
+## 9. South Africa Localization (Platform, Payments, Shipping, Channels)
+
+The business is based in South Africa — these adjustments override anything generic above.
+
+### Store platform: Shopify + a local payment gateway
+- **Shopify Payments is NOT available in South Africa.** Use a third-party gateway; Shopify adds a 0.6–2% transaction fee on top of gateway fees (2% on Basic plan) — budget for it.
+- **Gateway options** (all integrate natively with Shopify, no monthly fees):
+  - **PayFast** — most popular in SA; cards, Instant EFT, SnapScan, Zapper, Mobicred. ~3.5% per transaction. Safe default.
+  - **Paystack** (Stripe-owned) — strong card checkout, good developer experience.
+  - **Yoco / Peach Payments / Ozow** — worth comparing rates once you have volume; Ozow adds cheap instant-EFT which SA shoppers love.
+- Set store currency to **ZAR**. If you also ship internationally, enable Shopify Markets to show USD/EUR/GBP pricing.
+- Budget alternative if Shopify's USD pricing stings early on: **Shopstar** (SA-based, rand pricing, PayFast built in) — but you lose the one-click ad-platform apps that make the tracking setup in section 0 easy, so move to Shopify as soon as revenue supports it.
+
+### Shipping
+- Connect **Bob Go** (formerly uAfrica) to Shopify — it aggregates The Courier Guy, Fastway, DPD etc., auto-generates waybills, and gives customers rate choice at checkout.
+- Offer **Pargo pickup points** as a cheap option — popular with SA shoppers who don't want to wait at home.
+- Set a free-shipping threshold slightly above your average order value (e.g. free over R950) — the single most effective conversion lever.
+
+### Marketplaces (SA channel mix)
+- **Etsy works from South Africa** — Etsy Payments is available to SA sellers (processing ~4.5% + R8 per order, payouts to a ZAR bank account). List there from day one for international handmade buyers; the weak rand makes SA-made goods very competitively priced for US/EU customers.
+- **Takealot Marketplace** — SA's biggest marketplace; worth testing for storage/home lines once you have stock depth (they take a success fee, and fulfilment logistics are stricter).
+- **Hello Pretty** — SA's local handmade marketplace; small but exactly your audience, cheap to list.
+- **Facebook Marketplace + local buy/sell groups** — free, and strong for furniture-sized pieces where buyers prefer local collection.
+
+### Ad platform availability from SA
+- **Google Ads, Meta, TikTok ads:** fully available — no changes to sections 1, 2, and 4.
+- **Pinterest ads:** only recently opened to SA advertisers via Pinterest's reseller partners (Httpool/Aleph). If self-serve access isn't offered when you create the ad account, run Pinterest **organic-only** (still very high value — section 3's organic engine) and put the paid share into Google Shopping and Meta instead.
+- **TikTok Shop:** not launched in SA yet (see section 4).
+
+### Budget & seasonal notes
+- Translate the example budget at roughly R18–R20/$: the $2,000/month example ≈ **R35,000–R40,000/month**. Scaled down, a realistic SA starting budget is **R6,000–R15,000/month** with the same percentage splits (Google 40% / Meta 30–50% / TikTok 10%, Pinterest share redistributed if paid isn't available).
+- Seasonal peaks: **November (Black Friday) → mid-December** is the big gifting window; SA Mother's Day is the same second Sunday of May. If selling internationally via Etsy, also work US/EU holiday timelines (start Christmas content late September).
+- If annual turnover approaches **R1 million**, VAT registration becomes compulsory — talk to an accountant before you cross it.
+
+---
+
+## 10. The Weekly Operating Rhythm (put this in your calendar)
 
 | Day | Task | Time |
 |---|---|---|
