@@ -114,6 +114,12 @@
 }
 
 * { box-sizing: border-box; }
+html, body {
+  height: auto !important;
+  min-height: 100%;
+  overflow-y: auto !important;
+  overflow-x: clip;
+}
 body {
   margin: 0;
   background: var(--ground);
@@ -121,6 +127,7 @@ body {
   font-family: "Avenir Next", "Segoe UI", -apple-system, system-ui, sans-serif;
   line-height: 1.6;
 }
+.wrap > * { min-width: 0; }
 h1, h2, h3, .display {
   font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
   line-height: 1.15;
@@ -140,6 +147,7 @@ h1, h2, h3, .display {
 header.site {
   border-bottom: 1px solid var(--line);
   position: sticky; top: 0;
+  background: var(--ground);
   background: color-mix(in srgb, var(--ground) 92%, transparent);
   backdrop-filter: blur(6px);
   z-index: 10;
