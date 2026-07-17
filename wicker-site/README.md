@@ -1,4 +1,4 @@
-# Reed & Rand — wicker couch showcase site
+# Wicker Craft — wicker couch showcase site (wickercraft.co.za)
 
 A single-page, self-contained website showcasing handwoven rattan/wicker
 couches, built to compete in the same market as sites like wickerguys.co.za.
@@ -14,17 +14,17 @@ No build step, no dependencies — upload the four files to any static host
 | `sitemap.xml` | Sitemap for Google Search Console.                             |
 | `llms.txt`    | Plain-language brand/product summary for AI search engines.    |
 
-## Before you launch — replace the placeholders
+## Before you launch — remaining placeholders
 
-1. **Brand name** — "Reed & Rand" is a placeholder. Search-and-replace it with
-   your real trading name (also inside the three `<script type="application/ld+json">`
-   blocks and `llms.txt`).
-2. **`YOURDOMAIN.co.za`** — appears in `index.html` (canonical + OG tags +
-   JSON-LD), `robots.txt`, `sitemap.xml`, and `llms.txt`.
-3. **Phone and email** — `+27 00 000 0000` and `hello@YOURDOMAIN.co.za`.
-4. **Prices** — the ZAR prices are realistic placeholders; set your real ones
+Brand ("Wicker Craft") and domain (`wickercraft.co.za`) are already set
+throughout. Still to replace:
+
+1. **Phone** — `+27 00 000 0000` in `index.html` (contact section + JSON-LD)
+   and `llms.txt`. Email is set to `hello@wickercraft.co.za`; change it if you
+   use a different address.
+2. **Prices** — the ZAR prices are realistic placeholders; set your real ones
    in both the visible cards and the Product JSON-LD.
-5. **Photos** — the woven SVG illustrations are placeholders. Replace each
+3. **Photos** — the woven SVG illustrations are placeholders. Replace each
    card's `<svg>` with a real photo of *your* couch (never a competitor's
    photo — that's a copyright problem and Google can detect duplicates).
    Keep descriptive `alt` text: "Handwoven rattan three-seater couch in honey
