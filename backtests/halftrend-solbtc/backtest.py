@@ -31,6 +31,7 @@ AMPLITUDE = 20
 CHANNEL_DEV = 2.0
 ATR_PERIOD = 100
 BASE_RISK_MULT = 6.0  # dist = 6 * ATR/2 = 3 x ATR; TPs scale with it (1R/2R/3R)
+REGIME_SMA = 100  # long-only variant: take bullish flips only above this SMA
 COMMISSION = 0.001
 CASH = 10.0  # account denominated in BTC
 TRANCHE = 0.3  # 3 tranches x 30% of equity
@@ -38,6 +39,7 @@ TRANCHE = 0.3  # 3 tranches x 30% of equity
 
 class HalfTrendStrategy(Strategy):
     risk_mult = BASE_RISK_MULT
+    long_only = False  # True: bullish flips only when Regime==1, bearish flips just exit
 
     def init(self):
         pass  # signals precomputed on the full series, carried in as data columns
@@ -54,6 +56,8 @@ class HalfTrendStrategy(Strategy):
         if self.data.Buy[-1]:
             if self.position.is_short:
                 self.position.close()
+            if self.long_only and not self.data.Regime[-1]:
+                return
             if not self.position.is_long:
                 sl = price - dist
                 for k in (1, 2, 3):
@@ -61,7 +65,7 @@ class HalfTrendStrategy(Strategy):
         elif self.data.Sell[-1]:
             if self.position.is_long:
                 self.position.close()
-            if not self.position.is_short:
+            if not self.long_only and not self.position.is_short:
                 sl = price + dist
                 for k in (1, 2, 3):
                     tp = price - k * dist
@@ -76,6 +80,8 @@ def attach_signals(df: pd.DataFrame, amplitude=AMPLITUDE) -> pd.DataFrame:
     out["Atr2"] = ht.atr2
     out["Buy"] = ht.buy_signal.astype(int)
     out["Sell"] = ht.sell_signal.astype(int)
+    sma = df["Close"].rolling(REGIME_SMA, min_periods=REGIME_SMA).mean()
+    out["Regime"] = (df["Close"] > sma).fillna(False).astype(int)
     return out
 
 
@@ -137,17 +143,22 @@ def main():
         "",
     ]
 
-    for name, df in (
-        (f"In-sample (70%): {is_df.index[0].date()} .. {is_df.index[-1].date()}", is_df),
-        (f"Out-of-sample (30%): {oos_df.index[0].date()} .. {oos_df.index[-1].date()}", oos_df),
-        (f"Full period: {full.index[0].date()} .. {full.index[-1].date()}", full),
+    for variant, long_only in (
+        ("Long/short (as published)", False),
+        (f"Long-only + regime filter (bull flips only above SMA{REGIME_SMA})", True),
     ):
-        stats = run(df)
-        report.append(fmt_stats(name, stats))
-        print(f"\n== {name}\n{stats[KEEP].to_string()}")
+        report.append(f"## {variant}\n")
+        for name, df in (
+            (f"In-sample (70%): {is_df.index[0].date()} .. {is_df.index[-1].date()}", is_df),
+            (f"Out-of-sample (30%): {oos_df.index[0].date()} .. {oos_df.index[-1].date()}", oos_df),
+            (f"Full period: {full.index[0].date()} .. {full.index[-1].date()}", full),
+        ):
+            stats = run(df, long_only=long_only)
+            report.append(fmt_stats(name, stats))
+            print(f"\n== {variant} | {name}\n{stats[KEEP].to_string()}")
 
-    # Parameter robustness sweep on the in-sample slice only
-    report += ["## Robustness sweep (in-sample)", "",
+    # Parameter robustness sweep on the in-sample slice only (long-only variant)
+    report += ["## Robustness sweep (in-sample, long-only + regime)", "",
                "Return % / Sharpe / #trades per (amplitude, baseRiskMult):", "",
                "| amplitude \\ riskMult | 4.0 | 6.0 | 8.0 |", "|---|---|---|---|"]
     print("\n== Robustness sweep (IS): amplitude x baseRiskMult")
@@ -155,7 +166,7 @@ def main():
         row = [f"| {amp} |"]
         sweep = attach_signals(raw, amplitude=amp).iloc[:split]
         for rm in (4.0, 6.0, 8.0):
-            s = run(sweep, risk_mult=rm)
+            s = run(sweep, risk_mult=rm, long_only=True)
             cell = f"{s['Return [%]']:.0f}% / {s['Sharpe Ratio']:.2f} / {s['# Trades']}"
             row.append(f" {cell} |")
             print(f"  amp={amp} riskMult={rm}: {cell}")

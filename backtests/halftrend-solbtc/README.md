@@ -34,6 +34,13 @@ Run: `pip install backtesting pandas numpy && python build_dataset.py && python 
 - The robustness sweep spans -28% .. +64% with adjacent cells flipping sign —
   no stable parameter region. Either way, buy & hold (+1192% IS / +211% OOS)
   crushes every cell.
+- A long-only variant with a regime filter (bull flips only above the 100-day
+  SMA, bearish flips just exit) was also tested. It cuts full-period drawdown
+  (-36% vs -48%) by not shorting a structural uptrend, but stays negative at
+  default params: -10.7% IS / -9.7% OOS. Its in-sample sweep shows a
+  positive-looking pocket at amplitude 10-15 (+21..+33%), but validating that
+  pocket out-of-sample gives -7.5% .. +8.6% (best cell Sharpe 0.43 on 12
+  trades) — noise, not a transferable edge.
 - The Pine dashboard's advertised win rate is a scoreboard, not equity: it
   counts any TP1 *touch* as a win, and when a stop-out follows a TP1 hit it
   removes one win **and** one loss from the tally. The equity-curve reality
