@@ -30,7 +30,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 AMPLITUDE = 20
 CHANNEL_DEV = 2.0
 ATR_PERIOD = 100
-BASE_RISK_MULT = 3.0
+BASE_RISK_MULT = 6.0  # dist = 6 * ATR/2 = 3 x ATR; TPs scale with it (1R/2R/3R)
 COMMISSION = 0.001
 CASH = 10.0  # account denominated in BTC
 TRANCHE = 0.3  # 3 tranches x 30% of equity
@@ -49,20 +49,23 @@ class HalfTrendStrategy(Strategy):
             return
         dist = self.risk_mult * atr2
 
+        # A non-positive SL/TP level can never be touched (Pine keeps such
+        # levels forever-unfilled); the equivalent here is omitting the level.
         if self.data.Buy[-1]:
             if self.position.is_short:
                 self.position.close()
             if not self.position.is_long:
                 sl = price - dist
                 for k in (1, 2, 3):
-                    self.buy(size=TRANCHE, sl=sl, tp=price + k * dist)
+                    self.buy(size=TRANCHE, sl=sl if sl > 0 else None, tp=price + k * dist)
         elif self.data.Sell[-1]:
             if self.position.is_long:
                 self.position.close()
             if not self.position.is_short:
                 sl = price + dist
                 for k in (1, 2, 3):
-                    self.sell(size=TRANCHE, sl=sl, tp=price - k * dist)
+                    tp = price - k * dist
+                    self.sell(size=TRANCHE, sl=sl, tp=tp if tp > 0 else None)
 
 
 def attach_signals(df: pd.DataFrame, amplitude=AMPLITUDE) -> pd.DataFrame:
@@ -146,12 +149,12 @@ def main():
     # Parameter robustness sweep on the in-sample slice only
     report += ["## Robustness sweep (in-sample)", "",
                "Return % / Sharpe / #trades per (amplitude, baseRiskMult):", "",
-               "| amplitude \\ riskMult | 2.0 | 3.0 | 4.0 |", "|---|---|---|---|"]
+               "| amplitude \\ riskMult | 4.0 | 6.0 | 8.0 |", "|---|---|---|---|"]
     print("\n== Robustness sweep (IS): amplitude x baseRiskMult")
     for amp in (10, 15, 20, 25, 30):
         row = [f"| {amp} |"]
         sweep = attach_signals(raw, amplitude=amp).iloc[:split]
-        for rm in (2.0, 3.0, 4.0):
+        for rm in (4.0, 6.0, 8.0):
             s = run(sweep, risk_mult=rm)
             cell = f"{s['Return [%]']:.0f}% / {s['Sharpe Ratio']:.2f} / {s['# Trades']}"
             row.append(f" {cell} |")

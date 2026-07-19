@@ -1,63 +1,63 @@
 # HalfTrend [BigBeluga] on SOLBTC — daily backtest
 
-Data: synthetic daily SOLBTC 2021-01-01 .. 2024-09-29 (see `build_dataset.py` for sources and construction caveats). Params: amplitude=20, channelDeviation=2.0, ATR(100)/2, baseRiskMult=3.0, fees 0.1%/side, 3-tranche scale-out at 1R/2R/3R, full-position stop at 1R, reverse on opposite flip.
+Data: synthetic daily SOLBTC 2021-01-01 .. 2024-09-29 (see `build_dataset.py` for sources and construction caveats). Params: amplitude=20, channelDeviation=2.0, ATR(100)/2, baseRiskMult=6.0, fees 0.1%/side, 3-tranche scale-out at 1R/2R/3R, full-position stop at 1R, reverse on opposite flip.
 
 ### In-sample (70%): 2021-01-01 .. 2023-08-15
 
 | Metric | Value |
 |---|---|
-| Return [%] | -31.39 |
+| Return [%] | 18.93 |
 | Buy & Hold Return [%] | 1192.07 |
-| Return (Ann.) [%] | -13.38 |
-| Sharpe Ratio | -1.20 |
-| Sortino Ratio | -1.26 |
-| Max. Drawdown [%] | -36.59 |
+| Return (Ann.) [%] | 6.84 |
+| Sharpe Ratio | 0.22 |
+| Sortino Ratio | 0.37 |
+| Max. Drawdown [%] | -21.40 |
 | # Trades | 30 |
-| Win Rate [%] | 20.00 |
-| Profit Factor | 0.34 |
-| Expectancy [%] | -5.06 |
-| Exposure Time [%] | 7.73 |
+| Win Rate [%] | 53.33 |
+| Profit Factor | 1.63 |
+| Expectancy [%] | 4.34 |
+| Exposure Time [%] | 51.72 |
 
 ### Out-of-sample (30%): 2023-08-16 .. 2024-09-29
 
 | Metric | Value |
 |---|---|
-| Return [%] | -10.35 |
+| Return [%] | -34.60 |
 | Buy & Hold Return [%] | 211.21 |
-| Return (Ann.) [%] | -9.25 |
-| Sharpe Ratio | -0.73 |
-| Sortino Ratio | -0.87 |
-| Max. Drawdown [%] | -16.66 |
+| Return (Ann.) [%] | -31.42 |
+| Sharpe Ratio | -2.15 |
+| Sortino Ratio | -1.77 |
+| Max. Drawdown [%] | -39.20 |
 | # Trades | 27 |
-| Win Rate [%] | 25.93 |
-| Profit Factor | 0.55 |
-| Expectancy [%] | -2.01 |
-| Exposure Time [%] | 21.65 |
+| Win Rate [%] | 14.81 |
+| Profit Factor | 0.32 |
+| Expectancy [%] | -6.68 |
+| Exposure Time [%] | 36.74 |
 
 ### Full period: 2021-01-01 .. 2024-09-29
 
 | Metric | Value |
 |---|---|
-| Return [%] | -38.49 |
+| Return [%] | -29.71 |
 | Buy & Hold Return [%] | 3746.92 |
-| Return (Ann.) [%] | -12.16 |
-| Sharpe Ratio | -1.05 |
-| Sortino Ratio | -1.14 |
-| Max. Drawdown [%] | -43.74 |
+| Return (Ann.) [%] | -8.98 |
+| Sharpe Ratio | -0.37 |
+| Sortino Ratio | -0.49 |
+| Max. Drawdown [%] | -48.04 |
 | # Trades | 57 |
-| Win Rate [%] | 22.81 |
-| Profit Factor | 0.42 |
-| Expectancy [%] | -3.62 |
-| Exposure Time [%] | 11.92 |
+| Win Rate [%] | 29.82 |
+| Profit Factor | 0.82 |
+| Expectancy [%] | -1.65 |
+| Exposure Time [%] | 47.44 |
 
 ## Robustness sweep (in-sample)
 
 Return % / Sharpe / #trades per (amplitude, baseRiskMult):
 
-| amplitude \ riskMult | 2.0 | 3.0 | 4.0 |
+| amplitude \ riskMult | 4.0 | 6.0 | 8.0 |
 |---|---|---|---|
-| 10 | -1% / -0.04 / 48 | -11% / -0.21 / 48 | 1% / 0.02 / 48 |
-| 15 | 9% / 0.21 / 48 | 12% / 0.21 / 48 | -16% / -0.23 / 48 |
-| 20 | -22% / -1.01 / 30 | -31% / -1.20 / 30 | -9% / -0.16 / 30 |
-| 25 | -5% / -0.24 / 24 | -18% / -0.67 / 24 | -28% / -0.84 / 24 |
-| 30 | 6% / 0.29 / 18 | -5% / -0.20 / 18 | 5% / 0.12 / 18 |
+| 10 | 1% / 0.02 / 48 | 36% / 0.33 / 48 | 64% / 0.43 / 48 |
+| 15 | -16% / -0.23 / 48 | -27% / -0.37 / 48 | -12% / -0.12 / 48 |
+| 20 | -9% / -0.16 / 30 | 19% / 0.22 / 30 | 10% / 0.11 / 30 |
+| 25 | -28% / -0.84 / 24 | -27% / -0.48 / 24 | -1% / -0.02 / 24 |
+| 30 | 5% / 0.12 / 18 | 6% / 0.09 / 18 | -18% / -0.30 / 18 |

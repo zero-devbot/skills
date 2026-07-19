@@ -22,16 +22,18 @@ Run: `pip install backtesting pandas numpy && python build_dataset.py && python 
 
 ## Verdict: no edge on SOLBTC daily — rejected
 
-- Every configuration loses to both zero and buy & hold. Baseline params:
-  **-31% in-sample / -10% out-of-sample** (Sharpe -1.20 / -0.73, win rate
-  20-26%, profit factor 0.34-0.55) while SOLBTC buy & hold did +1192% / +211%.
-- The robustness sweep is noise around zero (-31% .. +12%) with no stable
-  region — nothing worth forward-testing, and picking the one positive cell
-  (amplitude 15) would be curve-fitting.
-- Structural problem: the stop sits only `1.5 × ATR(100)` from entry on a pair
-  whose daily ranges routinely exceed that, so most trades stop out within days
-  (exposure ~12%) before a trend can pay 1R-3R. Meanwhile the engine is flat or
-  short through most of a monster SOL/BTC uptrend.
+- With the script's default `baseRiskMult=3` (stop 1.5×ATR), every
+  configuration lost money: -31% in-sample / -10% out-of-sample, Sharpe
+  -1.20 / -0.73, win rate 20-26%. The stop sits closer than typical daily
+  ranges, so ~77% of trades stopped out within days (exposure ~12%).
+- Widening to `baseRiskMult=6` (stop 3×ATR, the committed baseline) fixes the
+  stop-out churn (win rate 53% IS, exposure ~52%) and turns in-sample positive
+  (**+18.9%**, Sharpe 0.22, PF 1.63) — but out-of-sample collapses to
+  **-34.6%** (Sharpe -2.15, win rate 15%, PF 0.32). In-sample gains that
+  evaporate OOS are the signature of curve-fitting, not edge.
+- The robustness sweep spans -28% .. +64% with adjacent cells flipping sign —
+  no stable parameter region. Either way, buy & hold (+1192% IS / +211% OOS)
+  crushes every cell.
 - The Pine dashboard's advertised win rate is a scoreboard, not equity: it
   counts any TP1 *touch* as a win, and when a stop-out follows a TP1 hit it
   removes one win **and** one loss from the tally. The equity-curve reality
