@@ -12,9 +12,11 @@ research/
   c4/engine.py       event-driven execution, sizing, exits, circuit breakers
   c4/metrics.py      Sharpe, profit factor, R-multiples, drawdown
   c4/validate.py     IS/OOS, walk-forward, parameter sweeps, Monte Carlo
+  c4/parity.py       diff the terminal's gate output against Python's
   fetch_data.py      Dukascopy downloader -> CSV
-  run_backtest.py    CLI
-  tests/test_c4.py   18 tests, including the look-ahead check
+  run_backtest.py    backtest CLI
+  check_parity.py    parity CLI
+  tests/test_c4.py   23 tests, including the look-ahead and parity checks
 ```
 
 ## Why not `backtesting.py`
@@ -34,6 +36,7 @@ python run_backtest.py --synthetic --mode all      # prove the plumbing works
 python fetch_data.py --start 2015-01-01 --end 2026-01-01 --out data/
 python run_backtest.py --data-dir data/ --mode all --split 2022-01-01
 python tests/test_c4.py
+python check_parity.py --self-test                 # validate the parity comparer
 ```
 
 `--mode` selects `gates`, `single`, `oos`, `sweep`, `walkforward`, `montecarlo`, or `all`.
@@ -51,6 +54,59 @@ bar that closed at 07:00 and not the one still forming.
 `test_no_lookahead` recomputes every gate on a dataset truncated at 75% and asserts the
 last 200 bars are byte-identical to the full-history run. If that test ever fails, every
 number this harness produces is fiction. Route any new data source through `asof_align`.
+
+## Parity harness
+
+Two implementations of the same gates will drift apart. This finds it.
+
+```
+# 1. in MT5: attach Scripts/Concord4Export.mq5 to an M15 XAUUSD chart, run it
+# 2. copy MQL5/Files/concord4_mt5_export.csv next to this README
+python check_parity.py --mt5-csv concord4_mt5_export.csv
+python check_parity.py --mt5-csv concord4_mt5_export.csv --mode recompute --majors-dir data/
+```
+
+The export is **self-contained**: the bars the terminal used, the
+higher-timeframe values it derived from them, and the resulting gates. That
+matters, because three different problems look identical in a naive diff:
+
+| | cause | which mode exposes it |
+|---|---|---|
+| 1 | different bars — broker history vs. your CSV | `recompute` only |
+| 2 | different HTF values — server-time D1 boundaries vs. UTC days | `recompute` only |
+| 3 | different logic — a real bug in one implementation | **both** |
+
+- **`inject` (default)** feeds the terminal's own higher-timeframe values into
+  Python through `build_features(htf_override=...)`, so only the gate **logic** is
+  under test. A mismatch here is a genuine bug.
+- **`recompute`** derives everything from the exported bars, using the broker's day
+  boundaries (`resample_server_days`). A mismatch here but not in `inject` points at
+  data depth or timeframe construction.
+
+Run `inject` first. There is no point hunting a logic bug that is really a timezone.
+
+Crucially, inject mode exercises *the same* `build_features` the backtest uses — the
+override replaces inputs, not logic. A parity harness that reimplemented the gates
+would only prove two copies agree.
+
+The report gives per-gate match rates, float deviations with tolerances, a
+signal-set comparison (which bars actually traded, and which side was alone), the
+terminal's own indicator-vs-core cross-check read back via `iCustom`, and the first
+dozen disagreements with the values that drove them. It exits 0 on PASS, 1 on
+WARN/FAIL and 2 if nothing could be compared, so it can gate a commit.
+
+`--self-test` needs no terminal: it dresses a Python run up as an export and asserts
+a clean round trip is PASS, that 25 flipped gate values are caught, and that
+inverting every gate grades FAIL. If that fails, the comparer cannot be trusted to
+judge the real thing.
+
+### Precision is part of parity
+
+MT5 computes its opening range from bars already rounded to the instrument's digits.
+A CSV carrying more precision than the broker's bars will not reproduce its
+decisions — a sub-cent difference in the OR edge flips any breakout sitting on the
+threshold. Round your data to the instrument's precision before deriving anything.
+This is not hypothetical: it is what the parity self-test caught on its first run.
 
 ## What the engine assumes, and which way it errs
 
@@ -133,5 +189,13 @@ of the illiquid moments where breakouts fail and slippage is worst.
   assumption matters — which is why it defaults to the pessimistic branch.
 - **Single symbol.** The correlation cap in the design applies once a second instrument
   is added; today the engine holds at most one position.
+- **The parity harness has never seen a real MT5 export.** No terminal was available
+  here, so it has only been validated against its own synthetic round trip. The export
+  format and the comparer agree with each other by construction; whether
+  `Concord4Export.mq5` compiles and produces that format is the first thing to check.
+- **The `iCustom` cross-check assumes indicator defaults.** `Concord4Export.mq5` calls
+  `iCustom(_Symbol, PERIOD_M15, "Concord4")` with no parameter overrides, so the `ic_*`
+  columns are only meaningful while the script's inputs match the indicator's own
+  defaults. Change one and that column compares two different configurations.
 - **Synthetic data proves plumbing, never edge.** Any performance figure computed from
   `--synthetic` describes the random number generator.

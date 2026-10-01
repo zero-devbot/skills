@@ -64,9 +64,11 @@ series, and they look at it across horizons two orders of magnitude apart.
 ## Files
 
 ```
-Include/Concord4Core.mqh    all four gates, shared by both programs
+Include/Concord4Core.mqh    all four gates, shared by every program here
 Indicators/Concord4.mq5     gate visualiser + status panel, non-repainting
 Experts/Concord4EA.mq5      execution and risk engine
+Scripts/Concord4Export.mq5  export gate state for the Python parity harness
+research/                   Python backtest + validation + parity harness
 ```
 
 The EA does not read the indicator via `iCustom`. Both `#include` the same core, so an
@@ -157,6 +159,20 @@ GMT offset, or missing tick data.
 
 Run with `InpDryRun = true` first: it logs every signal and every rejection reason
 without sending orders.
+
+### Keeping the two implementations honest
+
+`research/` holds a Python reimplementation used for backtesting. Two implementations
+of the same rules will drift apart, so there is a harness to catch it:
+
+```
+# in MT5: attach Scripts/Concord4Export.mq5 to an M15 XAUUSD chart and run it
+cd research
+python check_parity.py --mt5-csv concord4_mt5_export.csv
+```
+
+It diffs the terminal's gate-by-gate output against Python's and exits non-zero on
+disagreement. See `research/README.md` for the two modes and what each one isolates.
 
 ---
 

@@ -141,6 +141,15 @@ def news_blackout_mask(
     return mask
 
 
+#: columns the parity harness may supply from a terminal export instead of
+#: letting Python derive them. Overriding these isolates a LOGIC difference
+#: from a data or day-boundary difference, without duplicating the logic.
+OVERRIDABLE = [
+    "atr_m15", "atr_h1", "atr_d1", "vol_pct", "adr",
+    "close_d1", "ema_d1", "tsmom_ref", "usd_ema", "usd_ema_prev",
+]
+
+
 def build_features(
     m15: pd.DataFrame,
     h1: pd.DataFrame,
@@ -149,8 +158,15 @@ def build_features(
     cfg: Config,
     news_events: pd.DatetimeIndex | None = None,
     default_spread: float = 0.25,
+    htf_override: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    """Compute every gate for every M15 bar. Index is the M15 bar OPEN time."""
+    """Compute every gate for every M15 bar. Index is the M15 bar OPEN time.
+
+    ``htf_override`` replaces any of ``OVERRIDABLE`` with externally supplied
+    values (see ``c4.parity``) before the gate logic runs. Everything
+    downstream is the same code either way, which is the point: the parity
+    harness must test this implementation, not a copy of it.
+    """
     out = m15.copy()
     decision_times = out.index + pd.Timedelta(minutes=15)
 
@@ -180,6 +196,28 @@ def build_features(
         )
     )
 
+    # ---- L2 inputs, as-of aligned (the gate itself is decided below) ----
+    if usd_h1 is None or usd_h1.empty:
+        out["usd_ema"] = np.nan
+        out["usd_ema_prev"] = np.nan
+    else:
+        usd_feat = pd.DataFrame(index=usd_h1.index)
+        usd_ema = ema(usd_h1, cfg.usd_ema_period)
+        usd_feat["usd_ema"] = usd_ema
+        usd_feat["usd_ema_prev"] = usd_ema.shift(cfg.usd_slope_bars)
+        out = out.join(
+            asof_align(
+                decision_times, usd_feat, pd.Timedelta(hours=1),
+                ["usd_ema", "usd_ema_prev"], "",
+            )
+        )
+
+    # ---- external values replace derived ones, if supplied --------------
+    if htf_override is not None:
+        for column in OVERRIDABLE:
+            if column in htf_override.columns:
+                out[column] = htf_override[column].reindex(out.index)
+
     # ---- L1 regime: trend AND momentum must agree ----------------------
     trend_up = out["close_d1"] > out["ema_d1"]
     mom_up = out["close_d1"] > out["tsmom_ref"]
@@ -197,26 +235,11 @@ def build_features(
     ) | ((minutes >= cfg.session_b_start_min) & (minutes < cfg.session_b_end_min))
     out["in_session"] = in_session
 
-    # ---- L2 intermarket: USD basket slope ------------------------------
-    if usd_h1 is None or usd_h1.empty:
-        out["l2"] = NEUTRAL
-        out["usd_slope"] = np.nan
-    else:
-        usd_feat = pd.DataFrame(index=usd_h1.index)
-        usd_ema = ema(usd_h1, cfg.usd_ema_period)
-        usd_feat["usd_ema"] = usd_ema
-        usd_feat["usd_ema_prev"] = usd_ema.shift(cfg.usd_slope_bars)
-
-        out = out.join(
-            asof_align(
-                decision_times, usd_feat, pd.Timedelta(hours=1),
-                ["usd_ema", "usd_ema_prev"], "",
-            )
-        )
-        slope = out["usd_ema"] - out["usd_ema_prev"]
-        out["usd_slope"] = slope
-        out["l2"] = np.where(slope < 0, LONG, np.where(slope > 0, SHORT, NEUTRAL))
-        out.loc[slope.isna(), "l2"] = NEUTRAL
+    # ---- L2 intermarket: a falling USD basket permits longs -------------
+    slope = out["usd_ema"] - out["usd_ema_prev"]
+    out["usd_slope"] = slope
+    out["l2"] = np.where(slope < 0, LONG, np.where(slope > 0, SHORT, NEUTRAL))
+    out.loc[slope.isna(), "l2"] = NEUTRAL
 
     # L2 is not evaluated outside the session, exactly as the EA skips it
     out.loc[~out["in_session"], "l2"] = NEUTRAL

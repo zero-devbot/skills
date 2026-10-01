@@ -22,6 +22,7 @@ from c4 import (                                    # noqa: E402
     Config, ExecConfig, Instrument, USD_BASKET,
     build_features, resample, run_backtest, size_position, synthetic_ohlc, usd_index_h1,
 )
+from c4.gates import OVERRIDABLE                      # noqa: E402,F401
 from c4.gates import LONG, NEUTRAL, SHORT, asof_align, opening_range  # noqa: E402
 from c4.indicators import atr, ema, rolling_percentile_rank           # noqa: E402
 from c4.metrics import max_drawdown, summarize                        # noqa: E402
@@ -302,6 +303,122 @@ def test_summary_handles_no_trades():
     )
     stats = summarize(equity, pd.DataFrame(), 1000.0)
     assert stats["trades"] == 0 and stats["max_drawdown"] == 0.0
+
+
+
+# ---------------------------------------------------------------- parity
+
+def _parity_fixture(tmp: Path, bars: int = 30_000, digits: int = 2):
+    """A Python run dressed up as a terminal export, plus the Python side."""
+    from c4.parity import load_mt5_export, python_side, write_synthetic_export
+
+    m15 = synthetic_ohlc("2017-01-01", bars, start_price=1300.0, seed=11)
+    m15 = m15.round(digits).assign(spread=0.08)
+
+    majors = {}
+    for i, (leg, _, _) in enumerate(USD_BASKET):
+        price = 110.0 if leg == "USDJPY" else 1.15
+        majors[leg] = resample(
+            synthetic_ohlc("2017-01-01", bars, start_price=price, annual_vol=0.08, seed=11 + i + 1),
+            "1h",
+        )
+
+    cfg = Config()
+    inst = Instrument(default_spread=0.08)
+    features = build_features(
+        m15, resample(m15, "1h"), resample(m15, "1D"),
+        usd_index_h1(majors), cfg, default_spread=0.08,
+    )
+
+    path = write_synthetic_export(features, tmp / "export.csv", digits=digits)
+    export, meta = load_mt5_export(path)
+    py, _ = python_side(export, meta, cfg, mode="inject", inst=inst)
+    return export, py, meta
+
+
+def test_parity_round_trip_is_clean():
+    """A Python run exported and re-read must agree with itself exactly."""
+    import tempfile
+    from c4.parity import compare
+
+    with tempfile.TemporaryDirectory() as tmp:
+        export, py, meta = _parity_fixture(Path(tmp))
+        report = compare(export, py, meta, "inject")
+
+        assert report.rows_compared > 1000, f"too few comparable rows: {report.rows_compared}"
+        assert report.gate_mismatches == 0, \
+            f"clean round trip disagreed on {report.gate_mismatches} gate value(s)"
+        assert report.verdict == "PASS"
+        assert not report.signal_overlap["mt5_only"]
+        assert not report.signal_overlap["python_only"]
+
+
+def test_parity_detects_a_flipped_gate():
+    """The comparer must notice corruption, or it is worthless as a check."""
+    import tempfile
+    from c4.parity import compare
+
+    with tempfile.TemporaryDirectory() as tmp:
+        export, py, meta = _parity_fixture(Path(tmp))
+
+        corrupted = export.copy()
+        flips = corrupted.index[corrupted["l1"] != 0][:40]
+        assert len(flips) > 0, "fixture produced no non-neutral L1 bars"
+        corrupted.loc[flips, "l1"] = -corrupted.loc[flips, "l1"]
+
+        report = compare(corrupted, py, meta, "inject")
+        assert report.gate_mismatches >= len(flips), \
+            f"missed injected corruption: {report.gate_mismatches} < {len(flips)}"
+
+
+def test_parity_grades_systematic_divergence_as_fail():
+    import tempfile
+    from c4.parity import compare
+
+    with tempfile.TemporaryDirectory() as tmp:
+        export, py, meta = _parity_fixture(Path(tmp))
+
+        broken = export.copy()
+        broken["l1"] = -broken["l1"]
+        broken["signal"] = -broken["signal"]
+
+        report = compare(broken, py, meta, "inject")
+        assert report.verdict == "FAIL", f"graded {report.verdict}, expected FAIL"
+
+
+def test_override_actually_overrides():
+    """htf_override must win over Python's own derivation."""
+    m15 = synthetic_ohlc("2018-01-01", 20_000, start_price=1300.0, seed=4).round(2)
+    h1, d1 = resample(m15, "1h"), resample(m15, "1D")
+    cfg = Config()
+
+    base = build_features(m15, h1, d1, pd.Series(dtype="float64"), cfg)
+
+    # force a long regime on every bar by injecting the L1 inputs
+    override = pd.DataFrame(index=m15.index)
+    override["close_d1"] = 2000.0
+    override["ema_d1"] = 1000.0
+    override["tsmom_ref"] = 1000.0
+
+    forced = build_features(m15, h1, d1, pd.Series(dtype="float64"), cfg, htf_override=override)
+
+    known = forced["atr_d1"].notna()
+    assert (forced.loc[known, "l1"] == LONG).all(), "override did not reach the L1 gate"
+    assert not base["l1"].equals(forced["l1"]), "override changed nothing"
+
+
+def test_server_day_resampling_shifts_boundaries():
+    """D1 bars must start at the broker's midnight, not UTC's."""
+    from c4.data import resample_server_days
+
+    m15 = synthetic_ohlc("2020-03-02", 96 * 6, start_price=1300.0, seed=6)
+    utc_days = resample(m15, "1D")
+    server_days = resample_server_days(m15, gmt_offset_hours=3.0)
+
+    assert (utc_days.index.hour == 0).all()
+    assert (server_days.index.hour == 21).all(), \
+        "a UTC+3 server's day should open at 21:00 UTC the previous day"
+    assert not utc_days.index.equals(server_days.index)
 
 
 # ---------------------------------------------------------------- runner

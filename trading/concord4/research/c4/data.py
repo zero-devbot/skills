@@ -96,6 +96,27 @@ def resample(frame: pd.DataFrame, rule: str) -> pd.DataFrame:
     return out.dropna(subset=["open", "high", "low", "close"])
 
 
+def resample_server_days(frame: pd.DataFrame, gmt_offset_hours: float) -> pd.DataFrame:
+    """Resample to D1 bars that start at the BROKER's midnight, not UTC's.
+
+    MT5's daily bars begin at the server's midnight. On a UTC+3 server that
+    is 21:00 UTC the previous day, so plain ``resample("1D")`` produces
+    different bars from the ones the terminal used - different ATR(D1),
+    different percentile, different regime bias. The parity harness needs
+    the terminal's boundaries to compare like with like.
+    """
+    offset = pd.Timedelta(hours=-float(gmt_offset_hours))
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last", "tick_volume": "sum"}
+    if "spread" in frame.columns:
+        agg["spread"] = "mean"
+
+    # "24h", not "1D": pandas silently ignores `offset` for calendar-day
+    # frequencies, so "1D" would hand back UTC days while claiming to be
+    # server days - a no-op that the parity harness would then blame on logic.
+    out = frame.resample("24h", label="left", closed="left", offset=offset).agg(agg)
+    return out.dropna(subset=["open", "high", "low", "close"])
+
+
 def usd_index_h1(majors: dict[str, pd.DataFrame]) -> pd.Series:
     """Log-weighted synthetic USD index on H1, mirroring ``C4BuildUsdSeries``.
 

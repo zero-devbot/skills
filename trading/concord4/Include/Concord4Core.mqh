@@ -102,6 +102,10 @@ struct C4State
    double            volPct;       // ATR(D1) percentile rank, 0-100
    double            usdEma, usdEmaPrev;
 
+   //--- L1 inputs, exported so the parity harness can isolate a logic
+   //--- disagreement from a data or day-boundary disagreement
+   double            closeD1, emaD1, tsmomRef;
+
    double            entry, stop, riskDist;
    string            vetoReason;   // why L3 or the risk geometry rejected a breakout
   };
@@ -472,6 +476,8 @@ bool C4Evaluate(const C4Config &c, const int shift, C4State &st)
    st.orHigh = st.orLow = st.orWidth = 0.0;
    st.entry  = st.stop  = st.riskDist = 0.0;
    st.volPct = -1.0;
+   st.closeD1 = st.emaD1 = st.tsmomRef = 0.0;
+   st.usdEma  = st.usdEmaPrev = 0.0;
 
    if(shift < 1) { st.notReady = "shift<1 (forming bar)"; return false; }
 
@@ -525,6 +531,10 @@ bool C4Evaluate(const C4Config &c, const int shift, C4State &st)
    double tsmomRef    = d1[c.tsmomDays].close;
    bool   trendUp     = (lastD1Close > emaD1[0]);
    bool   momUp       = (tsmomRef > 0.0 && lastD1Close > tsmomRef);
+
+   st.closeD1  = lastD1Close;
+   st.emaD1    = emaD1[0];
+   st.tsmomRef = tsmomRef;
 
    if(trendUp && momUp)        st.l1Bias = C4_LONG;
    else if(!trendUp && !momUp) st.l1Bias = C4_SHORT;
