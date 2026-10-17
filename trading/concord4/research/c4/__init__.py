@@ -12,7 +12,11 @@ from .data import (
 from .gates import Config, LONG, SHORT, NEUTRAL, OVERRIDABLE, build_features, veto_reasons
 from .engine import ExecConfig, Result, run_backtest, size_position
 from .metrics import summarize, format_summary, max_drawdown
-from .validate import Dataset, run, split_is_oos, sweep, walk_forward, monte_carlo
+from .validate import (
+    Dataset, load_dataset, run, split_is_oos, sweep, walk_forward,
+    weighted_walk_forward, monte_carlo,
+)
+from .audit import AuditReport, audit_bars, render_all as render_audit
 from .plots import (
     PlottingUnavailable, THEMES, drawdown_series, tearsheet, tearsheet_both_themes,
 )
@@ -26,7 +30,9 @@ __all__ = [
     "Config", "LONG", "SHORT", "NEUTRAL", "OVERRIDABLE", "build_features", "veto_reasons",
     "ExecConfig", "Result", "run_backtest", "size_position",
     "summarize", "format_summary", "max_drawdown",
-    "Dataset", "run", "split_is_oos", "sweep", "walk_forward", "monte_carlo",
+    "Dataset", "load_dataset", "run", "split_is_oos", "sweep", "walk_forward",
+    "monte_carlo", "weighted_walk_forward", "AuditReport", "audit_bars",
+    "render_audit",
     "ParityReport", "compare", "load_mt5_export", "python_side", "render",
     "write_synthetic_export",
     "PlottingUnavailable", "THEMES", "drawdown_series", "tearsheet",

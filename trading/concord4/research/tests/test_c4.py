@@ -19,7 +19,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from c4 import (                                    # noqa: E402
-    Config, ExecConfig, Instrument, USD_BASKET,
+    Config, Dataset, ExecConfig, Instrument, USD_BASKET,
     build_features, resample, run_backtest, size_position, synthetic_ohlc, usd_index_h1,
 )
 from c4.gates import OVERRIDABLE                      # noqa: E402,F401
@@ -535,6 +535,149 @@ def test_reference_lines_are_readable_in_both_themes():
         ratio = max(light, dark) / min(light, dark)
         assert ratio >= 2.0, \
             f"{name}: reference line contrast {ratio:.2f}:1 against the surface is too low"
+
+
+# ---------------------------------------------------- loading & audit
+
+MT5_EXPORT = (
+    "<DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>\n"
+    "2024.01.02\t07:00:00\t2063.05\t2064.12\t2062.88\t2063.44\t412\t0\t21\n"
+    "2024.01.02\t07:15:00\t2063.44\t2065.80\t2063.10\t2065.22\t655\t0\t19\n"
+)
+
+
+def test_load_csv_reads_a_metatrader_export():
+    import tempfile
+    from c4.data import load_csv
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "XAUUSD.csv"
+        path.write_text(MT5_EXPORT)
+        frame = load_csv(path, server_offset_hours=3.0)
+
+    assert list(frame.columns)[:5] == ["open", "high", "low", "close", "tick_volume"]
+    assert str(frame.index.tz) == "UTC"
+    # MetaTrader stamps server time; a UTC+3 broker's 07:00 bar is 04:00 UTC
+    assert frame.index[0] == pd.Timestamp("2024-01-02 04:00", tz="UTC")
+    # <TICKVOL> wins over <VOL>, which reads 0 on retail FX feeds
+    assert frame["tick_volume"].iloc[0] == 412
+    # integer point spreads become price units
+    assert abs(frame["spread"].iloc[0] - 0.21) < 1e-9
+
+
+def test_load_csv_leaves_a_price_spread_alone():
+    import tempfile
+    from c4.data import load_csv
+
+    plain = ("time,open,high,low,close,tick_volume,spread\n"
+             "2024-01-02T07:00:00Z,2063.05,2064.12,2062.88,2063.44,412,0.21\n"
+             "2024-01-02T07:15:00Z,2063.44,2065.80,2063.10,2065.22,655,0.19\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "plain.csv"
+        path.write_text(plain)
+        frame = load_csv(path)
+
+    assert abs(frame["spread"].iloc[0] - 0.21) < 1e-9, "a sub-1 float spread is already price units"
+    assert frame.index[0] == pd.Timestamp("2024-01-02 07:00", tz="UTC")
+
+
+def _audit_frame(bars: int = 40_000):
+    return synthetic_ohlc("2016-01-01", bars, start_price=2000.0, seed=9).assign(spread=0.25)
+
+
+def _findings(report, check: str):
+    return [f for f in report.findings if f.check == check]
+
+
+def test_audit_flags_broken_ohlc():
+    from c4.audit import FAIL, audit_bars
+
+    frame = _audit_frame()
+    frame.iloc[100, frame.columns.get_loc("high")] = frame.iloc[100]["low"] - 1.0
+    frame.iloc[200, frame.columns.get_loc("close")] = frame.iloc[200]["high"] + 10.0
+
+    report = audit_bars(frame, "X")
+    assert not report.ok, "a high below the low must fail the audit"
+    assert any(f.severity == FAIL for f in _findings(report, "ohlc"))
+
+
+def test_audit_separates_a_real_hole_from_the_weekend():
+    from c4.audit import audit_bars
+
+    clean = _audit_frame(60_000)
+    assert audit_bars(clean, "clean").stats["missing_bars"] == 0, \
+        "weekend breaks must not count as missing bars"
+
+    holed = clean.drop(clean.index[5_000:5_020])      # a five-hour feed drop
+    report = audit_bars(holed, "holed")
+    assert report.stats["missing_bars"] == 20
+    assert report.stats["gap_count"] == 1
+
+
+def test_audit_reports_a_multi_day_hole_rather_than_absorbing_it():
+    from c4.audit import audit_bars
+
+    clean = _audit_frame(60_000)
+    holed = clean.drop(clean.index[10_000:10_600])    # several days
+    report = audit_bars(holed, "holed")
+    assert _findings(report, "long breaks"), \
+        "a multi-day break must be surfaced, not swallowed as a weekend"
+
+
+def test_audit_fails_a_sample_too_short_to_warm_up():
+    from c4.audit import FAIL, audit_bars
+
+    report = audit_bars(_audit_frame(6_000), "short")
+    assert any(f.severity == FAIL for f in _findings(report, "span"))
+    assert not report.ok
+
+
+def test_audit_skips_strategy_checks_for_reference_feeds():
+    """A USD-basket leg is not judged by the traded symbol's gate."""
+    from c4.audit import audit_bars
+
+    frame = _audit_frame(6_000)
+    traded = audit_bars(frame, "XAUUSD", role="traded")
+    reference = audit_bars(frame, "EURUSD", role="reference")
+
+    assert not traded.ok, "the traded symbol is too short and should fail"
+    assert reference.ok, "a reference feed is not held to the strategy warmup"
+    assert _findings(traded, "spread gate"), "the traded symbol gets the gate check"
+    assert not _findings(reference, "spread gate"), "a reference feed must not"
+
+
+def test_weighted_walk_forward_ignores_folds_that_barely_traded():
+    """Thin folds produce meaningless Sharpes and must not carry the mean."""
+    from c4.validate import weighted_walk_forward
+
+    folds = pd.DataFrame({
+        "test_sharpe": [2.0, 2.0, 2.0, -0.4],
+        "test_trades": [1, 2, 1, 40],
+        "qualifies": [False, False, False, True],
+    })
+    agg = weighted_walk_forward(folds)
+
+    assert agg["folds"] == 4 and agg["qualifying_folds"] == 1
+    assert abs(agg["naive_mean"] - 1.4) < 1e-9
+    assert abs(agg["qualified_mean"] + 0.4) < 1e-9, \
+        "only the fold with real trades should set the aggregate"
+
+
+def test_walk_forward_marks_thin_folds():
+    from c4.validate import walk_forward
+
+    m15, h1, d1, usd = _dataset(bars=40_000)
+    folds = walk_forward(
+        Dataset(m15=m15, h1=h1, d1=d1, usd_h1=usd),
+        "breakout_atr_k", [0.15, 0.25],
+        cfg=Config(), exec_cfg=ExecConfig(use_vol_target=False),
+        inst=Instrument(default_spread=0.08),
+    )
+    if folds.empty:
+        return
+    assert "qualifies" in folds.columns
+    assert folds["qualifies"].dtype == bool
+
 
 
 # ---------------------------------------------------------------- runner

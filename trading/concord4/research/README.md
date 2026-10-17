@@ -14,10 +14,12 @@ research/
   c4/validate.py     IS/OOS, walk-forward, parameter sweeps, Monte Carlo
   c4/parity.py       diff the terminal's gate output against Python's
   c4/plots.py        tearsheet: equity curve, underwater drawdown, distributions
+  c4/audit.py        data quality checks, run before anything is computed
   fetch_data.py      Dukascopy downloader -> CSV
+  run_protocol.py    the whole validation protocol in one command
   run_backtest.py    backtest CLI
   check_parity.py    parity CLI
-  tests/test_c4.py   28 tests, including the look-ahead and parity checks
+  tests/test_c4.py   37 tests, including the look-ahead and parity checks
 ```
 
 `numpy` and `pandas` are required. `matplotlib` is needed only for `--plot` and
@@ -38,15 +40,55 @@ with `Concord4EA.mq5`.
 pip install -r requirements.txt
 
 python run_backtest.py --synthetic --mode all      # prove the plumbing works
-python fetch_data.py --start 2015-01-01 --end 2026-01-01 --out data/
-python run_backtest.py --data-dir data/ --mode all --split 2022-01-01
 python tests/test_c4.py
 python check_parity.py --self-test                 # validate the parity comparer
-
-python run_backtest.py --data-dir data/ --plot tearsheet.png --plot-theme both
 ```
 
-`--mode` selects `gates`, `single`, `oos`, `sweep`, `walkforward`, `montecarlo`, or `all`.
+Then, once you have data:
+
+```bash
+python run_protocol.py --data-dir data/ --server-offset 3 --out results/
+```
+
+That is the whole protocol — audit, gates, full sample, in/out-of-sample, three
+parameter sweeps, walk-forward, Monte Carlo, spread stress — writing `REPORT.md`,
+both tearsheets and the underlying CSVs. It exits 0 when every check passes, 1 on
+warnings, and **2 when the data audit fails, without computing anything downstream**.
+
+The individual stages remain available through `run_backtest.py --mode`
+(`gates`, `single`, `oos`, `sweep`, `walkforward`, `montecarlo`, `all`).
+
+## Getting data
+
+`fetch_data.py` pulls Dukascopy ticks, but many networks block
+`datafeed.dukascopy.com`. The fallback needs no third party: **export it from
+MetaTrader itself** (Tools → History Centre, or right-click a chart → Save As),
+one file per symbol named `XAUUSD.csv`, `EURUSD.csv` and so on. The loader reads
+that format directly — tab separated, angle-bracket headers, `<DATE>`/`<TIME>`
+split across two columns.
+
+**`--server-offset` is the argument to get right.** MetaTrader exports in the
+*broker's server time*, not UTC, and every session boundary in this system is
+specified in UTC. Loading a UTC+3 broker's export without saying so shifts the
+opening range by three hours and silently invalidates everything downstream —
+nothing in the output will look wrong. The EA prints the offset it resolved on
+init; use that number. The audit's Saturday-bar check will often catch a badly
+wrong offset, but it cannot catch a plausible one.
+
+You need the traded symbol plus at least three of the six USD-basket legs
+(EURUSD, USDJPY, GBPUSD, USDCAD, USDCHF, AUDUSD) or L2 fails closed and no trade
+is ever taken.
+
+## Data audit
+
+Synthetic data is clean by construction; broker history is not. The audit runs
+before anything is computed and checks OHLC integrity, index sanity, intra-week
+gaps (separating a feed outage from a weekend), multi-day breaks, Saturday bars,
+flat bars, bad ticks, spread sanity, and per-year coverage. A `FAIL` stops the
+protocol rather than producing a confident-looking number from broken input.
+
+It also reports **what share of bars the L0 spread gate would block on your
+feed** — the single most useful line when a run comes back with no trades.
 
 ## The as-of contract
 
@@ -184,8 +226,14 @@ positive metric the score is withheld rather than printed as noise — there is 
 region to be on a shelf of.
 
 **Walk-forward.** Each fold picks the best parameter on 12 months of training and reports
-what that choice earned on the untouched 6-month test window. The mean of the *test*
-column is the only honest estimate of live performance here.
+what that choice earned on the untouched 6-month test window.
+
+Read the **mean over qualifying folds**, not the naive mean. A fold holding one or two
+trades produces a Sharpe with no information in it, and a handful of those will happily
+report a strong average on data with no edge at all — on the synthetic fixture the naive
+mean came out at **0.97** while every single fold was below the 10-trade threshold. The
+`qualifies` column marks which folds carry any weight, and the protocol warns when none
+of them do.
 
 **Monte Carlo.** The backtest's max drawdown is one sample. Bootstrapping the trade order
 5,000 times shows what else that same edge could plausibly have done — usually a good

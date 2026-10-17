@@ -21,55 +21,11 @@ import pandas as pd
 
 from c4 import (
     Config, Dataset, ExecConfig, Instrument, PlottingUnavailable, USD_BASKET,
-    format_summary, load_csv, monte_carlo, resample, run, split_is_oos,
-    summarize, sweep, synthetic_ohlc, tearsheet, tearsheet_both_themes,
+    format_summary, monte_carlo, resample, run, split_is_oos,
+    load_dataset, summarize, sweep, synthetic_ohlc, tearsheet, tearsheet_both_themes,
     usd_index_h1, veto_reasons, walk_forward,
 )
 from c4.gates import build_features
-
-
-def load_dataset(data_dir: Path, symbol: str, news_csv: Path | None) -> Dataset:
-    """Load the traded symbol plus every USD-basket leg the folder has."""
-    main_path = data_dir / f"{symbol}.csv"
-    if not main_path.exists():
-        raise SystemExit(f"missing {main_path}")
-
-    raw = load_csv(main_path)
-    m15 = raw if _infer_freq(raw) <= pd.Timedelta(minutes=15) else raw
-    if _infer_freq(raw) < pd.Timedelta(minutes=15):
-        m15 = resample(raw, "15min")
-
-    majors = {}
-    for leg, _, _ in USD_BASKET:
-        path = data_dir / f"{leg}.csv"
-        if path.exists():
-            majors[leg] = resample(load_csv(path), "1h")
-
-    if len(majors) < 3:
-        print(f"WARNING: only {len(majors)} USD-basket legs found. "
-              f"L2 fails closed and NO trades will be taken. "
-              f"Add {[s for s, _, _ in USD_BASKET]} to {data_dir}.")
-
-    news = None
-    if news_csv and news_csv.exists():
-        events = pd.read_csv(news_csv)
-        col = next(c for c in events.columns if c.lower() in ("time", "datetime", "date"))
-        news = pd.DatetimeIndex(pd.to_datetime(events[col], utc=True, format="mixed"))
-        print(f"news calendar: {len(news)} high-impact events")
-
-    return Dataset(
-        m15=m15,
-        h1=resample(m15, "1h"),
-        d1=resample(m15, "1D"),
-        usd_h1=usd_index_h1(majors),
-        news=news,
-    )
-
-
-def _infer_freq(frame: pd.DataFrame) -> pd.Timedelta:
-    if len(frame) < 3:
-        return pd.Timedelta(minutes=15)
-    return pd.Series(frame.index).diff().median()
 
 
 def synthetic_dataset(bars: int, seed: int) -> Dataset:
@@ -123,6 +79,9 @@ def main(argv=None) -> int:
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--symbol", default="XAUUSD")
     parser.add_argument("--news-csv", type=Path, default=None)
+    parser.add_argument("--server-offset", type=float, default=0.0,
+                        help="broker server time minus UTC, in hours "
+                             "(MetaTrader exports are in server time)")
     parser.add_argument("--synthetic", action="store_true", help="run on generated data")
     parser.add_argument("--synthetic-bars", type=int, default=100_000)
     parser.add_argument("--seed", type=int, default=7)
@@ -155,7 +114,9 @@ def main(argv=None) -> int:
     dataset = (
         synthetic_dataset(args.synthetic_bars, args.seed)
         if args.synthetic
-        else load_dataset(args.data_dir, args.symbol, args.news_csv)
+        else load_dataset(args.data_dir, args.symbol,
+                          server_offset_hours=args.server_offset,
+                          news_csv=args.news_csv)
     )
 
     if args.spread_mult != 1.0 and "spread" in dataset.m15.columns:

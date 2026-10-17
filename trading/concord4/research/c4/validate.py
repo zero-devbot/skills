@@ -7,7 +7,8 @@ reshuffled - which is the only question that matters before risking money.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -21,6 +22,62 @@ from .metrics import summarize
 PLATEAU_MIN_PEAK = 0.10
 
 
+def load_dataset(
+    data_dir: Path,
+    symbol: str = "XAUUSD",
+    server_offset_hours: float = 0.0,
+    news_csv: Path | None = None,
+    verbose: bool = True,
+) -> "Dataset":
+    """Load the traded symbol plus every USD-basket leg present in ``data_dir``.
+
+    ``server_offset_hours`` is passed straight through to ``load_csv`` and
+    matters more than it looks: MetaTrader exports in server time, and a
+    mislabelled offset moves the opening range without changing anything that
+    would look wrong in the output.
+    """
+    from .data import USD_BASKET, load_csv, resample, usd_index_h1
+
+    data_dir = Path(data_dir)
+    main = data_dir / f"{symbol}.csv"
+    if not main.exists():
+        raise FileNotFoundError(f"missing {main}")
+
+    raw = load_csv(main, server_offset_hours=server_offset_hours, verbose=verbose)
+    step = pd.Series(raw.index).diff().median() if len(raw) > 2 else pd.Timedelta(minutes=15)
+    m15 = resample(raw, "15min") if step < pd.Timedelta(minutes=15) else raw
+
+    majors = {}
+    for leg, _, _ in USD_BASKET:
+        path = data_dir / f"{leg}.csv"
+        if path.exists():
+            majors[leg] = resample(
+                load_csv(path, server_offset_hours=server_offset_hours, verbose=False), "1h"
+            )
+
+    if verbose and len(majors) < 3:
+        print(f"  WARNING: only {len(majors)} USD-basket leg(s) found in {data_dir}. "
+              f"L2 fails closed and NO trades will be taken. Expected any three of "
+              f"{[s for s, _, _ in USD_BASKET]}.")
+
+    news = None
+    if news_csv and Path(news_csv).exists():
+        events = pd.read_csv(news_csv)
+        column = next(c for c in events.columns if c.lower() in ("time", "datetime", "date"))
+        news = pd.DatetimeIndex(pd.to_datetime(events[column], utc=True, format="mixed"))
+        if verbose:
+            print(f"  news calendar: {len(news):,} high-impact events")
+
+    return Dataset(
+        m15=m15,
+        h1=resample(m15, "1h"),
+        d1=resample(m15, "1D"),
+        usd_h1=usd_index_h1(majors) if majors else pd.Series(dtype="float64"),
+        news=news,
+        majors=majors,
+    )
+
+
 @dataclass
 class Dataset:
     """Everything a run needs, so a window can be re-sliced cheaply."""
@@ -30,6 +87,7 @@ class Dataset:
     d1: pd.DataFrame
     usd_h1: pd.Series
     news: pd.DatetimeIndex | None = None
+    majors: dict = field(default_factory=dict)
 
     def slice(self, start=None, end=None) -> "Dataset":
         """Slice the M15 window while KEEPING the higher-timeframe warmup.
@@ -38,7 +96,8 @@ class Dataset:
         history and silently disable the volatility-regime gate.
         """
         m15 = self.m15.loc[start:end]
-        return Dataset(m15=m15, h1=self.h1, d1=self.d1, usd_h1=self.usd_h1, news=self.news)
+        return Dataset(m15=m15, h1=self.h1, d1=self.d1, usd_h1=self.usd_h1,
+                       news=self.news, majors=self.majors)
 
 
 def run(
@@ -119,12 +178,19 @@ def walk_forward(
     exec_cfg: ExecConfig | None = None,
     inst: Instrument | None = None,
     metric: str = "sharpe",
+    min_trades: int = 10,
 ) -> pd.DataFrame:
     """Rolling anchored walk-forward over one parameter.
 
     Each fold picks the best value on the training window and reports what
     that choice earned on the untouched test window. The aggregate of the
     TEST columns is the only honest estimate of live performance here.
+
+    A ``qualifies`` column marks folds with at least ``min_trades`` test
+    trades. Averaging across every fold regardless is actively misleading: a
+    fold holding two trades produces a Sharpe with no information in it, and
+    a handful of those will happily report a strong mean on data that has no
+    edge at all. Use ``weighted_walk_forward`` to aggregate.
     """
     cfg = cfg or Config()
     start = dataset.m15.index.min()
@@ -166,11 +232,40 @@ def walk_forward(
                 "test_trades": test_stats.get("trades"),
                 "test_return": test_stats.get("total_return"),
                 "test_max_dd": test_stats.get("max_drawdown"),
+                "qualifies": int(test_stats.get("trades") or 0) >= min_trades,
             }
         )
         train_start = train_start + pd.DateOffset(months=test_months)
 
     return pd.DataFrame(folds)
+
+
+def weighted_walk_forward(folds: pd.DataFrame, metric: str = "sharpe") -> dict:
+    """Aggregate walk-forward folds without letting empty ones vote.
+
+    Returns the naive mean alongside the mean over qualifying folds only, and
+    the trade count behind each. When the two disagree sharply, the naive
+    figure is being carried by folds that barely traded.
+    """
+    if folds is None or folds.empty:
+        return {}
+
+    column = f"test_{metric}"
+    if column not in folds.columns:
+        return {}
+
+    qualifying = folds[folds["qualifies"]] if "qualifies" in folds.columns else folds
+    values = folds[column].replace([np.inf, -np.inf], np.nan).dropna()
+    good = qualifying[column].replace([np.inf, -np.inf], np.nan).dropna()
+
+    return {
+        "folds": int(len(folds)),
+        "qualifying_folds": int(len(qualifying)),
+        "total_test_trades": int(folds["test_trades"].fillna(0).sum()),
+        "naive_mean": float(values.mean()) if len(values) else np.nan,
+        "qualified_mean": float(good.mean()) if len(good) else np.nan,
+        "qualified_trades": int(qualifying["test_trades"].fillna(0).sum()) if len(qualifying) else 0,
+    }
 
 
 def monte_carlo(

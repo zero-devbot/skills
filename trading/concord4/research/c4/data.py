@@ -46,37 +46,105 @@ class Instrument:
     default_spread: float = 0.25        # price units, used only if data has none
 
 
-def load_csv(path: str | Path, tz: str = "UTC") -> pd.DataFrame:
-    """Load an OHLC CSV indexed by bar open time.
+def _infer_point(prices: pd.Series) -> float:
+    """Smallest price increment, from the decimals actually present."""
+    text = prices.dropna().astype("str").head(500)
+    decimals = text.str.split(".").str[-1].str.len().where(text.str.contains("."), 0)
+    return 10.0 ** -int(decimals.max()) if len(decimals) else 0.01
 
-    Expected columns: ``time,open,high,low,close`` plus optional
-    ``tick_volume`` / ``volume`` and ``spread``. Times must be UTC.
+
+def load_csv(
+    path: str | Path,
+    server_offset_hours: float = 0.0,
+    spread_units: str = "auto",
+    point: float | None = None,
+    verbose: bool = False,
+) -> pd.DataFrame:
+    """Load an OHLC file indexed by bar open time in UTC.
+
+    Accepts the plain ``time,open,high,low,close`` form and MetaTrader's own
+    History Centre export, which is tab separated with angle-bracket headers
+    and splits the timestamp over ``<DATE>`` and ``<TIME>``::
+
+        <DATE>\t<TIME>\t<OPEN>\t<HIGH>\t<LOW>\t<CLOSE>\t<TICKVOL>\t<VOL>\t<SPREAD>
+        2024.01.02\t07:00:00\t2063.05\t2064.12\t2062.88\t2063.44\t412\t0\t21
+
+    ``server_offset_hours`` is the one argument worth getting right. **MetaTrader
+    exports in the broker's server time, not UTC**, and every session boundary
+    in this system is specified in UTC. Loading a UTC+3 broker's export without
+    saying so shifts the opening range by three hours and silently invalidates
+    everything downstream. Pass the broker's offset; the EA prints it on init.
+
+    ``spread_units`` converts MetaTrader's integer point spreads into price
+    units. "auto" treats an all-integer column as points.
     """
-    frame = pd.read_csv(path)
-    lower = {c.lower(): c for c in frame.columns}
+    frame = pd.read_csv(path, sep=None, engine="python", skipinitialspace=True)
 
-    time_col = next((lower[c] for c in ("time", "datetime", "date", "timestamp") if c in lower), None)
-    if time_col is None:
-        raise ValueError(f"{path}: no recognisable time column in {list(frame.columns)}")
+    # MetaTrader wraps its headers in angle brackets
+    frame.columns = [str(c).strip().strip("<>").lower() for c in frame.columns]
+    # MetaTrader exports BOTH <TICKVOL> and <VOL>, so these cannot be renamed
+    # blindly: collapsing them to one name produces duplicate columns, and
+    # frame["tick_volume"] then returns a DataFrame. Tick volume wins, because
+    # <VOL> is real volume and reads 0 on virtually every retail FX feed.
+    if "tickvol" in frame.columns:
+        frame = frame.drop(columns=[c for c in ("volume", "vol") if c in frame.columns])
+        frame = frame.rename(columns={"tickvol": "tick_volume"})
+    else:
+        for source in ("volume", "vol"):
+            if source in frame.columns:
+                frame = frame.rename(columns={source: "tick_volume"})
+                break
 
-    frame = frame.rename(columns={time_col: "time"})
-    frame["time"] = pd.to_datetime(frame["time"], utc=True, format="mixed")
+    if "date" in frame.columns and "time" in frame.columns:
+        stamps = frame["date"].astype(str).str.strip() + " " + frame["time"].astype(str).str.strip()
+        frame = frame.drop(columns=["date", "time"])
+        frame["time"] = stamps
+    else:
+        time_col = next(
+            (c for c in ("time", "datetime", "date", "timestamp") if c in frame.columns), None
+        )
+        if time_col is None:
+            raise ValueError(f"{path}: no recognisable time column in {list(frame.columns)}")
+        frame = frame.rename(columns={time_col: "time"})
+
+    # MetaTrader writes 2024.01.02; pandas needs the dots normalised
+    stamps = frame["time"].astype(str).str.strip().str.replace(".", "-", regex=False)
+    frame["time"] = pd.to_datetime(stamps, utc=True, format="mixed")
+
+    if server_offset_hours:
+        frame["time"] = frame["time"] - pd.Timedelta(hours=float(server_offset_hours))
+
     frame = frame.set_index("time").sort_index()
 
-    for src, dst in (("volume", "tick_volume"), ("vol", "tick_volume")):
-        if src in lower and "tick_volume" not in frame.columns:
-            frame = frame.rename(columns={lower[src]: dst})
-
-    frame.columns = [c.lower() for c in frame.columns]
     missing = {"open", "high", "low", "close"} - set(frame.columns)
     if missing:
         raise ValueError(f"{path}: missing columns {sorted(missing)}")
 
+    for column in ("open", "high", "low", "close", "tick_volume", "spread"):
+        if column in frame.columns:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+
     if "tick_volume" not in frame.columns:
         frame["tick_volume"] = 1.0
+    # MetaTrader's <VOL> is real volume and is 0 on most FX feeds; <TICKVOL> is
+    # the usable one, and the rename above already preferred it when both exist
+    frame["tick_volume"] = frame["tick_volume"].fillna(0.0)
+
+    if "spread" in frame.columns:
+        values = frame["spread"].dropna()
+        is_points = (
+            spread_units == "points"
+            or (spread_units == "auto" and len(values) > 0
+                and bool(np.all(np.isclose(values, values.round()))) and values.max() > 1.0)
+        )
+        if is_points:
+            tick = point if point is not None else _infer_point(frame["close"])
+            frame["spread"] = frame["spread"] * tick
+            if verbose:
+                print(f"  {Path(path).name}: spread read as points, converted at {tick:g}/point")
 
     keep = OHLC_COLUMNS + (["spread"] if "spread" in frame.columns else [])
-    frame = frame[keep]
+    frame = frame[keep].dropna(subset=["open", "high", "low", "close"])
     return frame[~frame.index.duplicated(keep="last")]
 
 
