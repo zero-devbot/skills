@@ -20,9 +20,10 @@ import numpy as np
 import pandas as pd
 
 from c4 import (
-    Config, Dataset, ExecConfig, Instrument, USD_BASKET,
+    Config, Dataset, ExecConfig, Instrument, PlottingUnavailable, USD_BASKET,
     format_summary, load_csv, monte_carlo, resample, run, split_is_oos,
-    summarize, sweep, synthetic_ohlc, usd_index_h1, veto_reasons, walk_forward,
+    summarize, sweep, synthetic_ohlc, tearsheet, tearsheet_both_themes,
+    usd_index_h1, veto_reasons, walk_forward,
 )
 from c4.gates import build_features
 
@@ -138,6 +139,15 @@ def main(argv=None) -> int:
                         help="spread in price units when the data has no spread column")
     parser.add_argument("--max-spread-atr", type=float, default=None,
                         help="override the L0 spread gate (fraction of ATR(M15))")
+    parser.add_argument("--plot", type=Path, default=None,
+                        help="write a tearsheet PNG (equity curve + underwater drawdown)")
+    parser.add_argument("--plot-theme", default="light", choices=["light", "dark", "both"])
+    parser.add_argument("--plot-log", action="store_true",
+                        help="log-scale the equity axis")
+    parser.add_argument("--save-equity", type=Path, default=None,
+                        help="write the equity curve and drawdown series to CSV")
+    parser.add_argument("--save-trades", type=Path, default=None,
+                        help="write the trade list to CSV")
     parser.add_argument("--sweep-param", default="breakout_atr_k")
     parser.add_argument("--sweep-values", default="0.05,0.10,0.15,0.20,0.25,0.30")
     args = parser.parse_args(argv)
@@ -171,13 +181,27 @@ def main(argv=None) -> int:
         report_gates(dataset, cfg, inst)
 
     result = None
-    if args.mode in ("single", "montecarlo", "all"):
+    needs_run = args.mode in ("single", "montecarlo", "all") or args.plot or \
+        args.save_equity or args.save_trades
+    if needs_run:
         result, stats = run(dataset, cfg, exec_cfg, inst)
         print(format_summary(stats, "CONCORD-4 - full sample"))
         if not result.rejections.empty:
             print("\n  signals blocked by circuit breakers:")
             for reason, count in result.rejections.items():
                 print(f"    {reason:<38} {count:>6,}")
+
+    if result is not None and (args.save_equity or args.save_trades):
+        if args.save_equity:
+            from c4 import drawdown_series
+            pd.DataFrame({
+                "equity": result.equity,
+                "drawdown": drawdown_series(result.equity),
+            }).to_csv(args.save_equity)
+            print(f"\n  equity curve written to {args.save_equity}")
+        if args.save_trades:
+            result.trades.to_csv(args.save_trades, index=False)
+            print(f"  trade list written to {args.save_trades}")
 
     if args.mode in ("oos", "all"):
         is_data, oos_data = split_is_oos(dataset, args.split)
@@ -234,6 +258,39 @@ def main(argv=None) -> int:
             print(f"  P(losing overall)         {mc['prob_negative'] * 100:5.1f}%")
             print(f"  P(drawdown > 10%)         {mc['prob_dd_over_10pct'] * 100:5.1f}%")
             print(f"  P(drawdown > 20%)         {mc['prob_dd_over_20pct'] * 100:5.1f}%")
+
+    if args.plot:
+        if result is None:
+            print("\n  nothing to plot: no backtest was run")
+        elif result.equity.empty:
+            print("\n  nothing to plot: the equity curve is empty")
+        else:
+            mc = monte_carlo(result.trades, iterations=2000,
+                             initial_equity=args.equity, seed=args.seed)
+            subtitle = (
+                f"{dataset.m15.index[0]:%Y-%m-%d} to {dataset.m15.index[-1]:%Y-%m-%d}   "
+                f"risk {args.risk:.2f}% / trade   vol target {args.vol_target:.0f}%"
+                f"{'   SYNTHETIC DATA' if args.synthetic else ''}"
+            )
+            try:
+                if args.plot_theme == "both":
+                    written = tearsheet_both_themes(
+                        result.equity, result.trades, stats, args.plot,
+                        title="CONCORD-4", subtitle=subtitle,
+                        log_scale=args.plot_log, monte_carlo=mc,
+                    )
+                else:
+                    written = [tearsheet(
+                        result.equity, result.trades, stats, args.plot,
+                        title="CONCORD-4", subtitle=subtitle,
+                        theme=args.plot_theme, log_scale=args.plot_log,
+                        monte_carlo=mc,
+                    )]
+                for item in written:
+                    print(f"\n  tearsheet written to {item}")
+            except PlottingUnavailable as exc:
+                print(f"\n  {exc}")
+                return 1
 
     return 0
 

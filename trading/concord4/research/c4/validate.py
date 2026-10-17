@@ -203,6 +203,9 @@ def monte_carlo(
     return {
         "iterations": iterations,
         "observed_trades": int(len(pnl)),
+        # the raw depths, so a plot can show the whole distribution rather
+        # than five percentiles of it
+        "samples": depths,
         "max_dd_percentiles": {f"p{q}": float(np.percentile(depths, q)) for q in quantiles},
         "median_final_equity": float(np.median(finals)),
         "prob_negative": float((finals < initial_equity).mean()),

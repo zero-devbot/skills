@@ -421,6 +421,122 @@ def test_server_day_resampling_shifts_boundaries():
     assert not utc_days.index.equals(server_days.index)
 
 
+# ---------------------------------------------------------------- plotting
+
+def _has_matplotlib() -> bool:
+    try:
+        import matplotlib  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _plot_fixture():
+    """A short backtest with real trades, for the plotting tests."""
+    index = pd.date_range("2020-06-01", periods=600, freq="15min", tz="UTC")
+    rng = np.random.default_rng(3)
+    walk = 10_000 + np.cumsum(rng.normal(0.0, 8.0, len(index)))
+    equity = pd.Series(walk, index=index, name="equity")
+
+    trades = pd.DataFrame({
+        "pnl": [120.0, -50.0, -50.0, 210.0, -50.0, 95.0],
+        "r_multiple": [2.4, -1.0, -1.0, 4.2, -1.0, 1.9],
+    })
+    stats = summarize(equity, trades, 10_000.0)
+    return equity, trades, stats
+
+
+def test_drawdown_series_agrees_with_max_drawdown():
+    from c4.plots import drawdown_series
+
+    equity = pd.Series(
+        [100.0, 120.0, 90.0, 110.0],
+        index=pd.date_range("2020-01-01", periods=4, freq="1D", tz="UTC"),
+    )
+    series = drawdown_series(equity)
+    depth, _, _ = max_drawdown(equity)
+
+    assert (series <= 1e-12).all(), "drawdown must never be positive"
+    assert abs(-series.min() - depth) < 1e-12, "panel and metric disagree on depth"
+    assert series.iloc[0] == 0.0
+
+
+def test_tearsheet_renders_both_themes():
+    if not _has_matplotlib():
+        print("          (skipped: matplotlib not installed)")
+        return
+
+    import tempfile
+    from c4.plots import tearsheet_both_themes
+
+    equity, trades, stats = _plot_fixture()
+    with tempfile.TemporaryDirectory() as tmp:
+        written = tearsheet_both_themes(equity, trades, stats, Path(tmp) / "sheet.png")
+
+        assert len(written) == 2
+        for path in written:
+            assert path.exists(), f"{path} was not written"
+            assert path.stat().st_size > 20_000, f"{path} is suspiciously small"
+        assert written[1].name == "sheet-dark.png"
+
+
+def test_tearsheet_survives_a_run_with_no_trades():
+    if not _has_matplotlib():
+        print("          (skipped: matplotlib not installed)")
+        return
+
+    import tempfile
+    from c4.plots import tearsheet
+
+    equity, _, _ = _plot_fixture()
+    empty = pd.DataFrame()
+    stats = summarize(equity, empty, 10_000.0)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = tearsheet(equity, empty, stats, Path(tmp) / "empty.png")
+        assert path.exists() and path.stat().st_size > 10_000
+
+
+def test_tearsheet_rejects_empty_equity_and_unknown_theme():
+    if not _has_matplotlib():
+        print("          (skipped: matplotlib not installed)")
+        return
+
+    import tempfile
+    from c4.plots import tearsheet
+
+    equity, trades, stats = _plot_fixture()
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            tearsheet(pd.Series(dtype="float64"), trades, stats, Path(tmp) / "x.png")
+            raise AssertionError("an empty equity curve should not plot")
+        except ValueError:
+            pass
+
+        try:
+            tearsheet(equity, trades, stats, Path(tmp) / "y.png", theme="midnight")
+            raise AssertionError("an unknown theme should be rejected")
+        except ValueError:
+            pass
+
+
+def test_reference_lines_are_readable_in_both_themes():
+    """A line inside the plot carries meaning, so it must not recede."""
+    from c4.plots import THEMES
+
+    def luminance(hex_colour: str) -> float:
+        rgb = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+    for name, theme in THEMES.items():
+        light = luminance(theme.reference) + 0.05
+        dark = luminance(theme.surface) + 0.05
+        ratio = max(light, dark) / min(light, dark)
+        assert ratio >= 2.0, \
+            f"{name}: reference line contrast {ratio:.2f}:1 against the surface is too low"
+
+
 # ---------------------------------------------------------------- runner
 
 def _run_all() -> int:

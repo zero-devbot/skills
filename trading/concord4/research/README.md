@@ -13,11 +13,16 @@ research/
   c4/metrics.py      Sharpe, profit factor, R-multiples, drawdown
   c4/validate.py     IS/OOS, walk-forward, parameter sweeps, Monte Carlo
   c4/parity.py       diff the terminal's gate output against Python's
+  c4/plots.py        tearsheet: equity curve, underwater drawdown, distributions
   fetch_data.py      Dukascopy downloader -> CSV
   run_backtest.py    backtest CLI
   check_parity.py    parity CLI
-  tests/test_c4.py   23 tests, including the look-ahead and parity checks
+  tests/test_c4.py   28 tests, including the look-ahead and parity checks
 ```
+
+`numpy` and `pandas` are required. `matplotlib` is needed only for `--plot` and
+`requests` only for `fetch_data.py`; everything that produces numbers runs without
+either.
 
 ## Why not `backtesting.py`
 
@@ -37,6 +42,8 @@ python fetch_data.py --start 2015-01-01 --end 2026-01-01 --out data/
 python run_backtest.py --data-dir data/ --mode all --split 2022-01-01
 python tests/test_c4.py
 python check_parity.py --self-test                 # validate the parity comparer
+
+python run_backtest.py --data-dir data/ --plot tearsheet.png --plot-theme both
 ```
 
 `--mode` selects `gates`, `single`, `oos`, `sweep`, `walkforward`, `montecarlo`, or `all`.
@@ -54,6 +61,46 @@ bar that closed at 07:00 and not the one still forming.
 `test_no_lookahead` recomputes every gate on a dataset truncated at 75% and asserts the
 last 200 bars are byte-identical to the full-history run. If that test ever fails, every
 number this harness produces is fiction. Route any new data source through `asof_align`.
+
+## Tearsheets
+
+```bash
+python run_backtest.py --data-dir data/ --plot tearsheet.png
+python run_backtest.py --data-dir data/ --plot sheet.png --plot-theme both --plot-log
+python run_backtest.py --data-dir data/ --save-equity equity.csv --save-trades trades.csv
+```
+
+Four panels under a strip of hero numbers:
+
+| Panel | What it answers |
+|---|---|
+| **Equity curve** | marked to market, with the worst peak-to-trough span shaded and labelled |
+| **Underwater** | how far below the running peak, and for how long — the drawdown *duration* a single max-DD number hides |
+| **R-multiple distribution** | is the edge convexity or accuracy? Losses and wins as opposite poles |
+| **Bootstrapped max drawdown** | the observed drawdown against the p95 of 2,000 reshuffled paths |
+
+`--plot-theme both` writes `sheet.png` and `sheet-dark.png`. Dark mode is a
+selected set of steps for the dark surface, not an inversion of the light one.
+
+Some deliberate choices, so a later edit does not undo them by accident:
+
+- **Equity and drawdown are stacked panels sharing one x axis, never one plot with
+  two y scales.** A dual-axis chart invents a correlation out of the arbitrary
+  alignment of its two scales.
+- **Colours come from a validated palette** (blue slot 1 for equity, red slot 8 for
+  loss). The two only share a plot in the R histogram, where they encode polarity;
+  that pair clears the colourblind separation floor in both modes (CVD ΔE 21.6
+  light / 19.2 dark against a floor of 8), so the split is readable without relying
+  on hue.
+- **In-plot reference lines use muted ink, not the axis token.** A spine may recede
+  at the edge of a plot; a line *inside* it carrying meaning — zero drawdown,
+  starting equity, zero R — may not. A test pins the contrast in both themes.
+- **Labels are selective**: the endpoint, the extreme, the thresholds that carry a
+  decision. A number on every point goes unread.
+
+A PNG cannot carry a tooltip, so the numbers behind every panel stay reachable:
+`--save-equity` writes the equity and drawdown series, `--save-trades` the trade
+list.
 
 ## Parity harness
 

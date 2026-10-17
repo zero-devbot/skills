@@ -171,6 +171,13 @@ cd research
 python check_parity.py --mt5-csv concord4_mt5_export.csv
 ```
 
+It also renders tearsheets — equity curve, underwater drawdown, R-multiple
+distribution and a bootstrapped drawdown distribution:
+
+```
+python run_backtest.py --data-dir data/ --plot tearsheet.png --plot-theme both
+```
+
 It diffs the terminal's gate-by-gate output against Python's and exits non-zero on
 disagreement. See `research/README.md` for the two modes and what each one isolates.
 
