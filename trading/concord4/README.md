@@ -67,7 +67,8 @@ series, and they look at it across horizons two orders of magnitude apart.
 Include/Concord4Core.mqh    all four gates, shared by every program here
 Indicators/Concord4.mq5     gate visualiser + status panel, non-repainting
 Experts/Concord4EA.mq5      execution and risk engine
-Scripts/Concord4Export.mq5  export gate state for the Python parity harness
+Scripts/Concord4ExportBars.mq5  export bars to CSV for the harness, in UTC
+Scripts/Concord4Export.mq5      export gate state for the parity harness
 research/                   Python backtest + validation + parity harness
 ```
 
@@ -82,6 +83,8 @@ Copy into your MT5 data folder (**File → Open Data Folder**):
 MQL5/Include/Concord4Core.mqh
 MQL5/Indicators/Concord4.mq5
 MQL5/Experts/Concord4EA.mq5
+MQL5/Scripts/Concord4ExportBars.mq5
+MQL5/Scripts/Concord4Export.mq5
 ```
 
 Compile both `.mq5` files in MetaEditor (F7), then attach to an **M15 XAUUSD** chart.
@@ -176,6 +179,16 @@ distribution and a bootstrapped drawdown distribution:
 
 ```
 python run_backtest.py --data-dir data/ --plot tearsheet.png --plot-theme both
+```
+
+### Getting data out of the terminal
+
+`Scripts/Concord4ExportBars.mq5` writes the traded symbol plus all six
+USD-basket legs to `MQL5/Files/*.csv` in one pass, already converted to UTC, so
+the harness needs no timezone argument at all:
+
+```
+python run_protocol.py --data-dir data/ --out results/
 ```
 
 It diffs the terminal's gate-by-gate output against Python's and exits non-zero on

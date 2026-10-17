@@ -75,10 +75,38 @@ def load_csv(
     saying so shifts the opening range by three hours and silently invalidates
     everything downstream. Pass the broker's offset; the EA prints it on init.
 
+    Files written by ``Scripts/Concord4ExportBars.mq5`` carry a
+    ``# timezone=UTC`` header and need no offset at all; passing one anyway
+    raises rather than silently double-shifting the data.
+
     ``spread_units`` converts MetaTrader's integer point spreads into price
     units. "auto" treats an all-integer column as points.
     """
-    frame = pd.read_csv(path, sep=None, engine="python", skipinitialspace=True)
+    # Concord4ExportBars.mq5 writes a "# key=value" preamble; read it before
+    # pandas skips over it, because it decides whether the offset below is
+    # allowed at all.
+    meta: dict[str, str] = {}
+    with Path(path).open("r", errors="replace") as handle:
+        for line in handle:
+            if not line.startswith("#"):
+                break
+            for token in line.lstrip("#").strip().split():
+                if "=" in token:
+                    key, _, value = token.partition("=")
+                    meta[key] = value
+
+    if meta.get("timezone", "").upper() == "UTC" and server_offset_hours:
+        raise ValueError(
+            f"{Path(path).name} was exported by Concord4ExportBars.mq5 and its "
+            f"timestamps are ALREADY UTC (the script applied a "
+            f"{meta.get('server_offset_hours', '?')}h offset itself), but "
+            f"server_offset_hours={server_offset_hours} was passed as well.\n"
+            "Applying it twice would shift the opening range exactly as badly as "
+            "not applying it at all. Drop --server-offset for these files."
+        )
+
+    frame = pd.read_csv(path, sep=None, engine="python", skipinitialspace=True,
+                        comment="#")
 
     # MetaTrader wraps its headers in angle brackets
     frame.columns = [str(c).strip().strip("<>").lower() for c in frame.columns]

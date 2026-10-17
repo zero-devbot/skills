@@ -47,7 +47,7 @@ python check_parity.py --self-test                 # validate the parity compare
 Then, once you have data:
 
 ```bash
-python run_protocol.py --data-dir data/ --server-offset 3 --out results/
+python run_protocol.py --data-dir data/ --out results/
 ```
 
 That is the whole protocol — audit, gates, full sample, in/out-of-sample, three
@@ -60,20 +60,38 @@ The individual stages remain available through `run_backtest.py --mode`
 
 ## Getting data
 
-`fetch_data.py` pulls Dukascopy ticks, but many networks block
-`datafeed.dukascopy.com`. The fallback needs no third party: **export it from
-MetaTrader itself** (Tools → History Centre, or right-click a chart → Save As),
-one file per symbol named `XAUUSD.csv`, `EURUSD.csv` and so on. The loader reads
-that format directly — tab separated, angle-bracket headers, `<DATE>`/`<TIME>`
-split across two columns.
+### The easy way: export it from MetaTrader
 
-**`--server-offset` is the argument to get right.** MetaTrader exports in the
-*broker's server time*, not UTC, and every session boundary in this system is
-specified in UTC. Loading a UTC+3 broker's export without saying so shifts the
-opening range by three hours and silently invalidates everything downstream —
-nothing in the output will look wrong. The EA prints the offset it resolved on
-init; use that number. The audit's Saturday-bar check will often catch a badly
-wrong offset, but it cannot catch a plausible one.
+Run `Scripts/Concord4ExportBars.mq5` on any chart. It writes one CSV per symbol
+into `MQL5/Files/` — the traded symbol on M15 and all six USD-basket legs on H1,
+in a single pass. Copy them into `data/` and run the protocol. **No
+`--server-offset`.**
+
+That flag is the single most consequential thing to get wrong, so the script
+removes it from the picture: MetaTrader stores bar times in the *broker's server
+time*, every session boundary in this system is UTC, and the script resolves the
+offset with the same `C4ToUtc()` the EA uses and writes UTC timestamps directly.
+It records the offset it applied in a `# timezone=UTC` header, and the loader
+**refuses** a `--server-offset` on top of that — double-applying it would shift
+the opening range exactly as badly as never applying it.
+
+It also writes the files under their *base* names, so `XAUUSD.m` at your broker
+still lands as `XAUUSD.csv` where the harness looks for it.
+
+### Other sources
+
+`fetch_data.py` pulls Dukascopy ticks, but many networks block
+`datafeed.dukascopy.com`. A manual MetaTrader export (Ctrl+U → Bars → export)
+also works: the loader reads that format too — tab separated, angle-bracket
+headers, `<DATE>`/`<TIME>` split over two columns.
+
+For anything that is *not* from the export script, **`--server-offset` is yours
+to get right**. A UTC+3 broker's export loaded as UTC shifts the opening range
+three hours and nothing in the output will look wrong. The EA prints the offset
+it resolved on init; use that number. The audit's Saturday-bar check often
+catches a badly wrong offset, but it cannot catch a plausible one.
+
+### Either way
 
 You need the traded symbol plus at least three of the six USD-basket legs
 (EURUSD, USDJPY, GBPUSD, USDCAD, USDCHF, AUDUSD) or L2 fails closed and no trade

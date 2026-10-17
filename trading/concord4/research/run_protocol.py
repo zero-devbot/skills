@@ -139,9 +139,15 @@ def main(argv=None) -> int:
 
     # ---- 1. data audit --------------------------------------------------
     print(f"Loading {args.symbol} and USD-basket legs from {args.data_dir} ...")
-    dataset = load_dataset(args.data_dir, args.symbol,
-                           server_offset_hours=args.server_offset,
-                           news_csv=args.news_csv)
+    try:
+        dataset = load_dataset(args.data_dir, args.symbol,
+                               server_offset_hours=args.server_offset,
+                               news_csv=args.news_csv)
+    except (ValueError, FileNotFoundError) as exc:
+        # a misconfigured run is a user error, not a crash; a stack trace
+        # buries the one line that says how to fix it
+        print(f"\nCannot load the data:\n\n{exc}\n")
+        return 2
 
     report.section("1. Data audit")
     audits = [audit_bars(dataset.m15, args.symbol, max_spread_atr=cfg.max_spread_atr,

@@ -679,6 +679,83 @@ def test_walk_forward_marks_thin_folds():
     assert folds["qualifies"].dtype == bool
 
 
+# ------------------------------------------- bars exported by the MQL5 script
+
+EXPORTED_BARS = (
+    "# concord4_bars v1\n"
+    "# timezone=UTC\n"
+    "# server_offset_hours=3.00\n"
+    "# symbol=XAUUSD.m timeframe=PERIOD_M15 digits=2 point=0.0100000000\n"
+    "# broker=Example Ltd server=Example-Live\n"
+    "time,open,high,low,close,tick_volume,spread\n"
+    "2024-01-02T04:00:00Z,2063.05,2064.12,2062.88,2063.44,412,0.210\n"
+    "2024-01-02T04:15:00Z,2063.44,2065.80,2063.10,2065.22,655,0.190\n"
+)
+
+
+def _write_export(tmp: Path, text: str = EXPORTED_BARS) -> Path:
+    path = tmp / "XAUUSD.csv"
+    path.write_text(text)
+    return path
+
+
+def test_exported_bars_load_without_an_offset():
+    """The script already applied it, so the loader must not need one."""
+    import tempfile
+    from c4.data import load_csv
+
+    with tempfile.TemporaryDirectory() as tmp:
+        frame = load_csv(_write_export(Path(tmp)))
+
+    assert len(frame) == 2
+    assert frame.index[0] == pd.Timestamp("2024-01-02 04:00", tz="UTC")
+    assert frame["tick_volume"].iloc[0] == 412
+    # already price units, so the points heuristic must leave it alone
+    assert abs(frame["spread"].iloc[0] - 0.21) < 1e-9
+
+
+def test_exported_bars_refuse_a_second_offset():
+    """Applying the offset twice is exactly as wrong as not applying it."""
+    import tempfile
+    from c4.data import load_csv
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = _write_export(Path(tmp))
+        try:
+            load_csv(path, server_offset_hours=3.0)
+        except ValueError as exc:
+            assert "already utc" in str(exc).lower()
+            return
+    raise AssertionError("a double offset on a UTC export should raise")
+
+
+def test_a_file_without_the_utc_header_still_takes_an_offset():
+    """Hand exports stay on the old path; only the script's files are guarded."""
+    import tempfile
+    from c4.data import load_csv
+
+    plain = ("time,open,high,low,close,tick_volume,spread\n"
+             "2024-01-02T07:00:00Z,2063.05,2064.12,2062.88,2063.44,412,0.21\n")
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "XAUUSD.csv"
+        path.write_text(plain)
+        frame = load_csv(path, server_offset_hours=3.0)
+
+    assert frame.index[0] == pd.Timestamp("2024-01-02 04:00", tz="UTC"), \
+        "an un-headered file must still honour the offset it is given"
+
+
+def test_comment_preamble_does_not_reach_the_dataframe():
+    import tempfile
+    from c4.data import load_csv
+
+    with tempfile.TemporaryDirectory() as tmp:
+        frame = load_csv(_write_export(Path(tmp)))
+
+    assert list(frame.columns) == ["open", "high", "low", "close", "tick_volume", "spread"]
+    assert frame.notna().all().all(), "metadata lines leaked into the data"
+
+
 
 # ---------------------------------------------------------------- runner
 
